@@ -1,0 +1,127 @@
+name: security_officer_app
+description: "FusionZ Secure - Security workforce management app with offline support, GPS tracking, and check calls."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # UI
+  cupertino_icons: ^1.0.8
+
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^17.0.1
+
+  # Database (Offline Storage)
+  drift: ^2.20.3
+  drift_flutter: ^0.2.1
+  sqlite3_flutter_libs: ^0.5.24
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Network & API
+  dio: ^5.7.0
+  web_socket_channel: ^3.0.1
+  socket_io_client: ^3.0.1
+  connectivity_plus: ^7.0.0
+
+  # Location & Maps
+  geolocator: ^14.0.2
+  google_maps_flutter: ^2.10.0
+  url_launcher: ^6.3.1
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Background Services
+  workmanager: ^0.9.0+3
+  flutter_background_service: ^5.0.10
+  android_alarm_manager_plus: ^5.0.0
+
+  # Notifications (Local only - no Firebase)
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.1
+
+  # Storage
+  shared_preferences: ^2.3.3
+  flutter_secure_storage: ^10.0.0
+  
+  # Feature-specific
+  image_picker: ^1.1.2 # For incident reporting
+  mobile_scanner: ^7.1.4 # For QR/NFC patrol tours
+
+  # Utilities
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  logger: ^2.4.0
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  # Testing
+  mockito: ^5.4.4
+
+  # App Icons and Splash
+  flutter_launcher_icons: ^0.14.2
+  flutter_native_splash: ^2.4.3
+
+  # Code Generation
+  build_runner: ^2.4.13
+  drift_dev: ^2.20.3
+  riverpod_generator: ^2.4.3
+  custom_lint: ^0.7.0
+  riverpod_lint: ^2.3.13
+  json_serializable: ^6.8.0
+
+  
+
+
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# Flutter Launcher Icons configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#1E40AF"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+
+# Flutter Native Splash configuration
+flutter_native_splash:
+  color: "#1E40AF"
+  image: "assets/splash/splash_icon.png"
+  android_12:
+    color: "#1E40AF"
+    image: "assets/splash/splash_icon.png"
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  uses-material-design: true
+
+  assets:
+    - assets/icon/
+    - assets/splash/
+    - assets/images/ # For incident reports and other UI assets
