@@ -233,8 +233,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           TrackingStatusCard(employeeId: employeeId, tenantId: tenantId),
           const SizedBox(height: 16),
           _buildQuickActions(context, theme, shiftId, siteId),
-          const SizedBox(height: 16),
-          _buildFeaturesList(context, theme),
         ],
       ),
     );
@@ -347,50 +345,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         padding: const EdgeInsets.all(16),
         minimumSize: const Size(double.infinity, 50),
         disabledBackgroundColor: Colors.grey,
-      ),
-    );
-  }
-
-  Card _buildFeaturesList(BuildContext context, ThemeData theme) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Features', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            _buildFeatureItem(context, Icons.tour, 'Guard Tours', 'Complete patrol routes by scanning QR codes'),
-            _buildFeatureItem(context, Icons.warning_amber_rounded, 'Panic Button', 'Send an emergency alert to your supervisor'),
-            _buildFeatureItem(context, Icons.report_problem, 'Incident Reporting', 'Create detailed incident reports with photos'),
-            _buildFeatureItem(context, Icons.schedule, 'View Shifts', 'See your upcoming shifts and schedules'),
-            _buildFeatureItem(context, Icons.location_on, 'Book On/Off', 'Clock in and out of your shifts'),
-            _buildFeatureItem(context, Icons.gps_fixed, 'GPS Tracking', 'Location tracked every 15 seconds during shifts'),
-            _buildFeatureItem(context, Icons.map, 'Navigate to Sites', 'Get directions to your assigned locations'),
-            _buildFeatureItem(context, Icons.phone, 'Check Calls', 'Respond to automated check calls'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFeatureItem(BuildContext context, IconData icon, String title, String subtitle) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: Theme.of(context).colorScheme.primary, size: 24),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
