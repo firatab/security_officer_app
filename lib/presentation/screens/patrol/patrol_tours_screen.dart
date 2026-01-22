@@ -394,7 +394,7 @@ class PatrolToursScreen extends ConsumerWidget {
       ),
     );
 
-    if (confirm != true) return;
+    if (confirm != true || !context.mounted) return;
 
     // Show loading
     showDialog(

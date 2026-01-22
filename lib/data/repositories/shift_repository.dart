@@ -189,12 +189,60 @@ class ShiftRepository {
     }
   }
 
-  /// Get shift by ID
+  /// Fetch a single shift from API by ID
+  Future<ShiftModel?> fetchShiftByIdFromAPI(String shiftId) async {
+    try {
+      final response = await _dioClient.dio.get(
+        '${ApiEndpoints.employeeShifts}/$shiftId',
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data['data'] ?? response.data['shift'];
+        if (data != null) {
+          final shift = ShiftModel.fromJson(data);
+          AppLogger.info('Fetched shift $shiftId from API');
+          return shift;
+        }
+      }
+      return null;
+    } on DioException catch (e) {
+      AppLogger.error('Failed to fetch shift by ID from API', e);
+      return null;
+    } catch (e) {
+      AppLogger.error('Unexpected error fetching shift by ID', e);
+      return null;
+    }
+  }
+
+  /// Get shift by ID - tries local database first, then API as fallback
   Future<Shift?> getShiftById(String shiftId) async {
     try {
-      return await (_database.select(_database.shifts)
+      // First, try to get from local database
+      final localShift = await (_database.select(_database.shifts)
             ..where((tbl) => tbl.id.equals(shiftId)))
           .getSingleOrNull();
+
+      if (localShift != null) {
+        AppLogger.debug('Found shift $shiftId in local database');
+        return localShift;
+      }
+
+      // If not found locally, try to fetch from API
+      AppLogger.info('Shift $shiftId not in local database, fetching from API...');
+      final apiShift = await fetchShiftByIdFromAPI(shiftId);
+      
+      if (apiShift != null) {
+        // Save to database for future offline access
+        await saveShiftsToDatabase([apiShift]);
+        
+        // Return the newly saved shift from database
+        return await (_database.select(_database.shifts)
+              ..where((tbl) => tbl.id.equals(shiftId)))
+            .getSingleOrNull();
+      }
+
+      AppLogger.warning('Shift $shiftId not found in database or API');
+      return null;
     } catch (e) {
       AppLogger.error('Error getting shift by ID', e);
       return null;

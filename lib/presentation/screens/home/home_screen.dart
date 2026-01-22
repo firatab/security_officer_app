@@ -284,10 +284,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               color: Colors.green,
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MapScreen())),
             ),
+            const SizedBox(height: 12),
+            // Manual sync button for location data
+            Consumer(
+              builder: (context, ref, child) {
+                final offlineState = ref.watch(offlineManagerProvider);
+                return _quickActionButton(
+                  context,
+                  icon: offlineState.isSyncing ? Icons.sync : Icons.cloud_upload,
+                  label: offlineState.isSyncing 
+                      ? 'Syncing...' 
+                      : offlineState.lastSyncTime != null
+                          ? 'Sync Data (${_formatLastSync(offlineState.lastSyncTime!)})'
+                          : 'Sync Data Now',
+                  color: offlineState.isSyncing ? Colors.grey : Colors.purple,
+                  onPressed: offlineState.isSyncing
+                      ? null
+                      : () async {
+                          final manager = ref.read(offlineManagerProvider.notifier);
+                          final success = await manager.syncNow();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(success
+                                    ? '✅ Sync completed successfully'
+                                    : '❌ Sync failed. Check your connection.'),
+                                backgroundColor: success ? Colors.green : Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                );
+              },
+            ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatLastSync(DateTime lastSync) {
+    final now = DateTime.now();
+    final difference = now.difference(lastSync);
+    
+    if (difference.inSeconds < 60) {
+      return '${difference.inSeconds}s ago';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return '${difference.inHours}h ago';
+    }
   }
 
   Widget _quickActionButton(BuildContext context, {required IconData icon, required String label, required Color color, required VoidCallback? onPressed}) {
@@ -378,14 +424,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       await ref.read(authServiceProvider).logout();
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
         (route) => false,
       );
     } catch (e) {
       AppLogger.error('Logout failed', e);
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Logout failed: $e'), backgroundColor: Colors.red),
       );
@@ -431,13 +477,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         siteId: siteId,
       );
 
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Panic alert sent successfully!'), backgroundColor: Colors.green),
       );
     } catch (e) {
       AppLogger.error('Panic alert failed', e);
-      if (!context.mounted) return;
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send panic alert: $e'), backgroundColor: Colors.red),
       );

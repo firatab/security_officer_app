@@ -288,7 +288,7 @@ The mobile app expects these API endpoints to be available:
 - `POST /api/attendance/book-off` - Clock out
 - `POST /api/location/bulk` - Upload GPS locations (bulk)
 - `POST /api/check-calls` - Record check call response
-- `GET /api/notifications` - Get notifications
+- `GET /api/mobile/notifications` - Get mobile notifications (background polling)
 
 ## Security Considerations
 

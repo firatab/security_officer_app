@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import '../core/constants/app_constants.dart';
+import '../core/constants/api_endpoints.dart';
 import 'notification_service.dart';
 
 /// Background service for polling notifications when app is closed
@@ -28,7 +29,7 @@ class BackgroundNotificationService {
         autoStart: false,
         isForegroundMode: false,
         autoStartOnBoot: true,
-        initialNotificationTitle: 'Security Officer',
+        initialNotificationTitle: 'SentraGuard',
         initialNotificationContent: 'Checking for updates...',
         foregroundServiceNotificationId: 888,
       ),
@@ -125,7 +126,7 @@ Future<void> _checkForNotifications(NotificationService notificationService) asy
 
     // Fetch pending notifications from server
     final response = await dio.get(
-      '/api/mobile/notifications',
+      ApiEndpoints.mobileNotifications,
       queryParameters: {'since': since},
     );
 

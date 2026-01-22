@@ -1,9 +1,16 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/app_constants.dart';
 import '../constants/api_endpoints.dart';
 import '../services/server_config_service.dart';
 import '../utils/logger.dart';
+
+/// Provider for DioClient - can be overridden in main.dart with server config
+final dioClientProvider = Provider<DioClient>((ref) {
+  return DioClient();
+});
 
 /// Dio client with authentication interceptor
 class DioClient {
@@ -33,13 +40,15 @@ class DioClient {
       ),
     );
 
-    // Add logging interceptor in debug mode
-    _dio.interceptors.add(LogInterceptor(
-      requestBody: true,
-      responseBody: true,
-      error: true,
-      logPrint: (obj) => AppLogger.debug(obj),
-    ));
+    // Add logging interceptor only in debug mode
+    if (kDebugMode) {
+      _dio.interceptors.add(LogInterceptor(
+        requestBody: true,
+        responseBody: true,
+        error: true,
+        logPrint: (obj) => AppLogger.debug(obj),
+      ));
+    }
   }
 
   Dio get dio => _dio;

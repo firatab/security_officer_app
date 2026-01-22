@@ -26,7 +26,7 @@ class PatrolExecutionScreen extends ConsumerStatefulWidget {
 class _PatrolExecutionScreenState extends ConsumerState<PatrolExecutionScreen> {
   late PatrolInstanceModel _instance;
   late List<PatrolPointModel> _points;
-  Map<String, PatrolPointCompletionModel> _completions = {};
+  final Map<String, PatrolPointCompletionModel> _completions = {};
   bool _isLoading = false;
 
   @override
@@ -52,13 +52,14 @@ class _PatrolExecutionScreenState extends ConsumerState<PatrolExecutionScreen> {
         ? _instance.completedPoints / _instance.totalPoints
         : 0.0;
 
-    return WillPopScope(
-      onWillPop: () async {
-        if (_instance.completedPoints > 0 && !_instance.isComplete) {
-          final result = await _showExitConfirmation();
-          return result ?? false;
+    return PopScope(
+      canPop: _instance.completedPoints == 0 || _instance.isComplete,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final shouldPop = await _showExitConfirmation();
+        if (shouldPop == true && context.mounted) {
+          Navigator.of(context).pop();
         }
-        return true;
       },
       child: Scaffold(
         appBar: AppBar(
@@ -91,7 +92,7 @@ class _PatrolExecutionScreenState extends ConsumerState<PatrolExecutionScreen> {
             // Progress header
             Container(
               padding: const EdgeInsets.all(16),
-              color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

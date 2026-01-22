@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../core/constants/app_constants.dart';
 import '../core/utils/logger.dart';
 
@@ -156,7 +156,7 @@ class WebSocketState {
 
 /// Socket.IO WebSocket service controller
 class WebSocketController extends StateNotifier<WebSocketState> {
-  IO.Socket? _socket;
+  socket_io.Socket? _socket;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   // Message stream controller for broadcasting messages to listeners
@@ -261,9 +261,9 @@ class WebSocketController extends StateNotifier<WebSocketState> {
       AppLogger.info('Connecting to Socket.IO: $wsUrl');
 
       // Create Socket.IO connection
-      _socket = IO.io(
+      _socket = socket_io.io(
         wsUrl,
-        IO.OptionBuilder()
+        socket_io.OptionBuilder()
             .setTransports(['websocket', 'polling']) // Fallback to polling
             .setPath('/api/socket')
             .setAuth({

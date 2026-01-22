@@ -1,11 +1,11 @@
 {
-    "name": "FusionZ Secure",
-    "short_name": "FusionZ Secure",
+    "name": "SentraGuard",
+    "short_name": "SentraGuard",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#1E40AF",
     "theme_color": "#1E40AF",
-    "description": "FusionZ Secure - Security workforce management app",
+    "description": "SentraGuard - Security workforce management app",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

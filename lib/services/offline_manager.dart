@@ -64,7 +64,7 @@ class OfflineManager extends StateNotifier<OfflineState> {
   Timer? _queueCheckTimer;
 
   // Sync configuration
-  static const Duration syncInterval = Duration(minutes: 5);
+  static const Duration syncInterval = Duration(seconds: 30); // Sync every 30 seconds for near real-time location updates
   static const Duration queueCheckInterval = Duration(seconds: 30);
 
   OfflineManager(this._syncService, this._database) : super(OfflineState()) {
@@ -178,16 +178,30 @@ class OfflineManager extends StateNotifier<OfflineState> {
     );
 
     try {
-      AppLogger.info('Starting sync...');
+      AppLogger.info('🔄 Starting location data sync...');
+      
+      // DIAGNOSTIC: Check what's in the database before sync
+      final totalLogs = await _database.countTotalLocationLogs();
+      final unsyncedCount = await _database.countUnsyncedLocationLogs();
+      AppLogger.info('📊 DB Status - Total: $totalLogs locations, Unsynced: $unsyncedCount');
 
       // Process sync queue
       await _syncService.processSyncQueue();
 
       // Sync location logs
-      await _syncService.syncLocationLogs();
+      final syncedCount = await _syncService.syncLocationLogs();
+      if (syncedCount > 0) {
+        AppLogger.info('📍 Synced $syncedCount location points');
+      } else if (unsyncedCount > 0) {
+        AppLogger.warning('⚠️ Had $unsyncedCount unsynced locations but none were sent. Check API connection!');
+      }
 
       // Update queue status
       await _updateQueueStatus();
+
+      // DIAGNOSTIC: Check what's left after sync
+      final remainingUnsynced = await _database.countUnsyncedLocationLogs();
+      AppLogger.info('📊 After sync - Remaining unsynced: $remainingUnsynced');
 
       state = state.copyWith(
         isSyncing: false,
@@ -196,7 +210,7 @@ class OfflineManager extends StateNotifier<OfflineState> {
         lastError: null,
       );
 
-      AppLogger.info('Sync completed successfully');
+      AppLogger.info('✅ Sync completed successfully');
       return true;
     } catch (e) {
       AppLogger.error('Sync failed', e);

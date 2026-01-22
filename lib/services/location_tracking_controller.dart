@@ -63,26 +63,43 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
       await _backgroundService.initialize();
 
       // Listen to status updates from background service
-      _statusSubscription = _backgroundService.statusStream.listen((status) {
-        if (status != null) {
-          state = state.copyWith(
-            lastPosition: Position(
-              latitude: status['latitude'] ?? 0.0,
-              longitude: status['longitude'] ?? 0.0,
-              accuracy: status['accuracy'] ?? 0.0,
-              altitude: 0.0,
-              altitudeAccuracy: 0.0,
-              heading: 0.0,
-              headingAccuracy: 0.0,
-              speed: 0.0,
-              speedAccuracy: 0.0,
-              timestamp: DateTime.tryParse(status['timestamp'] ?? '') ?? DateTime.now(),
-            ),
-            lastUpdate: DateTime.tryParse(status['timestamp'] ?? ''),
-            locationCount: status['count'] ?? 0,
-          );
-        }
-      });
+      _statusSubscription = _backgroundService.statusStream.listen(
+        (status) {
+          if (status != null && status.isNotEmpty) {
+            try {
+              final lat = (status['latitude'] as num?)?.toDouble() ?? 0.0;
+              final lng = (status['longitude'] as num?)?.toDouble() ?? 0.0;
+              final acc = (status['accuracy'] as num?)?.toDouble() ?? 0.0;
+              final timestampStr = status['timestamp'] as String?;
+              final count = (status['count'] as int?) ?? 0;
+
+              state = state.copyWith(
+                lastPosition: Position(
+                  latitude: lat,
+                  longitude: lng,
+                  accuracy: acc,
+                  altitude: 0.0,
+                  altitudeAccuracy: 0.0,
+                  heading: 0.0,
+                  headingAccuracy: 0.0,
+                  speed: 0.0,
+                  speedAccuracy: 0.0,
+                  timestamp: timestampStr != null
+                      ? DateTime.tryParse(timestampStr) ?? DateTime.now()
+                      : DateTime.now(),
+                ),
+                lastUpdate: timestampStr != null ? DateTime.tryParse(timestampStr) : DateTime.now(),
+                locationCount: count,
+              );
+            } catch (e) {
+              AppLogger.error('Error processing location status', e);
+            }
+          }
+        },
+        onError: (dynamic error) {
+          AppLogger.error('Status stream error', error);
+        },
+      );
 
       // Check if already tracking
       final isRunning = await _backgroundService.isTrackingActive();
@@ -96,6 +113,7 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
     } catch (e) {
       AppLogger.error('Error initializing location tracking', e);
       state = state.copyWith(
+        isInitialized: true, // Mark as initialized even on error to prevent retry loops
         error: 'Failed to initialize location tracking: $e',
       );
     }
@@ -107,33 +125,48 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
     required String tenantId,
     String? shiftId,
   }) async {
+    // Validate inputs
+    if (employeeId.isEmpty || tenantId.isEmpty) {
+      state = state.copyWith(
+        error: 'Invalid employee or tenant ID',
+      );
+      return false;
+    }
+
     try {
       // Check location permission first
-      final permission = await _locationService.checkPermission();
+      LocationPermission permission = await _locationService.checkPermission();
       if (permission == LocationPermission.denied) {
         final requested = await _locationService.requestPermission();
         if (requested == LocationPermission.denied ||
             requested == LocationPermission.deniedForever) {
           state = state.copyWith(
-            error: 'Location permission denied',
+            error: 'Location permission denied. Please grant location access.',
           );
           return false;
         }
+        permission = requested;
       }
 
       if (permission == LocationPermission.deniedForever) {
         state = state.copyWith(
-          error: 'Location permission permanently denied. Please enable in settings.',
+          error: 'Location permission permanently denied. Please enable in app settings.',
         );
         return false;
       }
 
       // Check if location services are enabled
-      if (!await _locationService.isLocationServiceEnabled()) {
+      final serviceEnabled = await _locationService.isLocationServiceEnabled();
+      if (!serviceEnabled) {
         state = state.copyWith(
-          error: 'Location services are disabled',
+          error: 'Location services are disabled. Please enable GPS.',
         );
         return false;
+      }
+
+      // Ensure background service is initialized
+      if (!state.isInitialized) {
+        await initialize();
       }
 
       // Start background tracking
@@ -150,10 +183,10 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
           error: null,
           locationCount: 0,
         );
-        AppLogger.info('Location tracking started');
+        AppLogger.info('Location tracking started for employee: $employeeId');
       } else {
         state = state.copyWith(
-          error: 'Failed to start tracking service',
+          error: 'Failed to start tracking service. Please try again.',
         );
       }
 
@@ -161,7 +194,7 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
     } catch (e) {
       AppLogger.error('Error starting tracking', e);
       state = state.copyWith(
-        error: 'Error starting tracking: $e',
+        error: 'Error starting tracking: ${e.toString().replaceAll('Exception:', '').trim()}',
       );
       return false;
     }

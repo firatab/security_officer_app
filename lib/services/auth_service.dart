@@ -8,11 +8,13 @@ import '../core/utils/logger.dart';
 import '../data/models/user_model.dart';
 import '../data/database/app_database.dart';
 import 'background_notification_service.dart';
+import 'device_info_service.dart';
 
 class AuthService {
   final DioClient _dioClient;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   final AppDatabase _database;
+  final DeviceInfoService _deviceInfoService = DeviceInfoService();
 
   AuthService(this._dioClient, this._database);
 
@@ -34,6 +36,9 @@ class AuthService {
 
         // Store tokens and user info (including organization slug)
         await _saveAuthData(loginResponse, organizationSlug: organizationSlug);
+
+        // Register device information
+        await _registerDevice(loginResponse.user.id);
 
         // Start background notification service
         await _startBackgroundNotifications();
@@ -189,6 +194,26 @@ class AuthService {
       AppLogger.info('Background notification service stopped');
     } catch (e) {
       AppLogger.error('Failed to stop background notifications', e);
+    }
+  }
+
+  /// Register device information with the backend
+  Future<void> _registerDevice(String userId) async {
+    try {
+      final deviceInfo = await _deviceInfoService.getDeviceInfo();
+      
+      await _dioClient.dio.post(
+        '/api/devices/register',
+        data: {
+          'userId': userId,
+          ...deviceInfo.toJson(),
+        },
+      );
+      
+      AppLogger.info('Device registered successfully');
+    } catch (e) {
+      // Don't fail login if device registration fails
+      AppLogger.warning('Failed to register device (non-critical)', e);
     }
   }
 }

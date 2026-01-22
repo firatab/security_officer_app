@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SentraGuard Officer</string>
+    <string name="status_initializing">Initializing...</string>
+    <string name="status_checking_permissions">Checking permissions...</string>
+    <string name="status_checking_auth">Checking authentication...</string>
+    <string name="status_loading">Loading...</string>
+    <string name="version_label">Version</string>
+</resources>

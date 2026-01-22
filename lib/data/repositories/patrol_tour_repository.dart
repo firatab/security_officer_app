@@ -137,8 +137,7 @@ class PatrolTourRepository {
     final instanceId = _uuid.v4();
     final now = DateTime.now();
 
-    // Get tour to know total points
-    final tour = await _database.patrolToursDao.getTourById(patrolTourId);
+    // Get points to know total points
     final points = await _database.patrolToursDao.getPointsForTour(patrolTourId);
     final totalPoints = points.length;
 

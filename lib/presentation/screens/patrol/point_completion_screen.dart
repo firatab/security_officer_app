@@ -6,9 +6,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../data/models/patrol_tour_model.dart';
 import '../../../main.dart';
-import '../../../services/location_service.dart';
 import 'widgets/task_input_widget.dart';
-import 'qr_scanner_screen.dart';
+import 'simple_qr_scanner_screen.dart';
 
 class PointCompletionScreen extends ConsumerStatefulWidget {
   final PatrolPointModel point;
@@ -87,7 +86,7 @@ class _PointCompletionScreenState extends ConsumerState<PointCompletionScreen> {
   Future<void> _getCurrentLocation() async {
     try {
       final locationService = ref.read(locationServiceProvider);
-      final position = await locationService.getCurrentPosition();
+      final position = await locationService.getCurrentLocation();
 
       if (mounted) {
         setState(() {
@@ -601,7 +600,7 @@ class _PointCompletionScreenState extends ConsumerState<PointCompletionScreen> {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(
-        builder: (context) => const QRScannerScreen(),
+        builder: (context) => const SimpleQRScannerScreen(),
       ),
     );
 

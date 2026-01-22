@@ -217,6 +217,10 @@ class CheckCallController extends StateNotifier<CheckCallState> {
       state = state.copyWith(error: 'No active check call to respond to');
       return false;
     }
+    if (_currentShiftId == null) {
+      state = state.copyWith(error: 'No active shift found for check call response');
+      return false;
+    }
 
     try {
       // Get current location
@@ -224,7 +228,9 @@ class CheckCallController extends StateNotifier<CheckCallState> {
 
       // Respond to check call
       await _repository.respondToCheckCallOnline(
+        shiftId: _currentShiftId!,
         checkCallId: currentCall.id,
+        scheduledTime: currentCall.scheduledTime,
         latitude: position.latitude,
         longitude: position.longitude,
         notes: notes,
@@ -249,12 +255,20 @@ class CheckCallController extends StateNotifier<CheckCallState> {
   /// Respond to a specific check call
   Future<bool> respondToCheckCall(String checkCallId, {String? notes}) async {
     try {
+      if (_currentShiftId == null) {
+        state = state.copyWith(error: 'No active shift found for check call response');
+        return false;
+      }
+
       // Get current location
       final position = await _locationService.getCurrentLocation();
+      final localCall = await _repository.getCheckCallById(checkCallId);
 
       // Respond to check call
       await _repository.respondToCheckCallOnline(
+        shiftId: _currentShiftId!,
         checkCallId: checkCallId,
+        scheduledTime: localCall?.scheduledTime,
         latitude: position.latitude,
         longitude: position.longitude,
         notes: notes,

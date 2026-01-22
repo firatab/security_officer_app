@@ -159,45 +159,6 @@ class WebSocketEventHandler {
     }
   }
 
-  /// Handle new job assignment notification
-  Future<void> _handleNewJobAssignment(Map<String, dynamic> data) async {
-    try {
-      final shiftData = data['shift'] as Map<String, dynamic>?;
-
-      if (shiftData == null) {
-        AppLogger.warning('New job assignment missing shift data');
-        return;
-      }
-
-      final shiftId = shiftData['id'] as String;
-      final siteName = shiftData['siteName'] as String? ??
-                       (shiftData['site'] as Map<String, dynamic>?)?['name'] as String? ??
-                       'Unknown Site';
-      final startTimeStr = shiftData['startTime'] as String?;
-      final startTime = startTimeStr != null
-          ? DateTime.parse(startTimeStr)
-          : DateTime.now();
-
-      AppLogger.info('New job assignment received: $shiftId at $siteName');
-
-      // Sync shifts to get the new job data
-      await _shiftRepository.syncShifts();
-
-      // Show push notification for new job
-      await _notificationService.showNewJobNotification(
-        shiftId: shiftId,
-        siteName: siteName,
-        startTime: startTime,
-      );
-
-      // Notify UI
-      onShiftUpdated?.call();
-      onNewJobAssignment?.call(shiftId, siteName, startTime);
-    } catch (e) {
-      AppLogger.error('Error handling new job assignment', e);
-    }
-  }
-
   /// Handle check call reminder
   Future<void> _handleCheckCallReminder(Map<String, dynamic> data) async {
     try {

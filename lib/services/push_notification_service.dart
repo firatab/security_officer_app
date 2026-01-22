@@ -290,7 +290,7 @@ class SocketEvent {
   static const String attendanceBookOn = 'attendance:book_on';
   static const String attendanceBookOff = 'attendance:book_off';
   static const String checkCallCreated = 'check_call:created';
-  static const String checkCallDue = 'check_call:due';
+  static const String checkCallDue = 'check_call_due';
   static const String checkCallResponded = 'check_call:responded';
   static const String checkCallMissed = 'check_call:missed';
   static const String checkCallAlarm = 'check_call_alarm';

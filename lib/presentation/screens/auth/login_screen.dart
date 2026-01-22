@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/server_config_service.dart';
@@ -52,8 +53,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  /// Handle logo tap for server URL configuration
+  /// Handle logo tap for server URL configuration (debug mode only)
   void _handleLogoTap() {
+    // Only allow server configuration in debug mode
+    if (!kDebugMode) return;
+
     final now = DateTime.now();
 
     // Reset tap count if more than 500ms between taps
@@ -239,7 +243,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
                 const Text(
-                  'Security Officer',
+                  'SentraGuard',
                   style: TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
@@ -248,7 +252,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Workforce Management',
+                  'Security Officer',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.white70,
@@ -418,7 +422,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Footer - show custom server indicator if not default
+                // Footer - show custom server indicator if not default (debug only)
                 Consumer(
                   builder: (context, ref, child) {
                     final serverConfig = ref.watch(serverConfigProvider);
@@ -431,7 +435,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             fontSize: 12,
                           ),
                         ),
-                        if (serverConfig.isCustomServer) ...[
+                        // Only show custom server indicator in debug mode
+                        if (kDebugMode && serverConfig.isCustomServer) ...[
                           const SizedBox(height: 4),
                           const Text(
                             'Custom Server',
@@ -473,7 +478,6 @@ class _ServerConfigDialog extends StatefulWidget {
 
 class _ServerConfigDialogState extends State<_ServerConfigDialog> {
   final _formKey = GlobalKey<FormState>();
-  bool _isValidating = false;
   String? _validationError;
 
   String? _validateUrl(String? value) {
@@ -589,20 +593,12 @@ class _ServerConfigDialogState extends State<_ServerConfigDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: _isValidating
-              ? null
-              : () {
-                  if (_formKey.currentState!.validate()) {
-                    Navigator.of(context).pop(true);
-                  }
-                },
-          child: _isValidating
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('Save'),
+          onPressed: () {
+            if (_formKey.currentState!.validate()) {
+              Navigator.of(context).pop(true);
+            }
+          },
+          child: const Text('Save'),
         ),
       ],
     );

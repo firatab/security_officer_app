@@ -186,7 +186,7 @@ class _TaskInputWidgetState extends State<TaskInputWidget> {
     }
 
     return DropdownButtonFormField<String>(
-      value: widget.value,
+      initialValue: widget.value,
       decoration: const InputDecoration(
         hintText: 'Select an option',
         border: OutlineInputBorder(),

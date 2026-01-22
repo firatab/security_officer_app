@@ -72,6 +72,13 @@ class AppConstants {
   static const String syncQueueTaskId = 'sync_queue_task';
 
   // App Info
-  static const String appName = 'Security Officer';
+  static const String appName = 'SentraGuard';
   static const String appVersion = '1.0.0';
+
+  // UI Strings
+  static const String statusInitializing = 'Initializing...';
+  static const String statusCheckingPermissions = 'Checking permissions...';
+  static const String statusCheckingAuth = 'Checking authentication...';
+  static const String statusLoading = 'Loading...';
+  static const String versionLabel = 'Version';
 }

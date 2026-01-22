@@ -3,7 +3,6 @@ import 'package:drift_flutter/drift_flutter.dart';
 
 // Import the consolidated table definitions
 import 'tables.dart';
-import 'tables/patrol_tours.dart';
 
 // DAO part files
 part 'daos/shifts_dao.dart';
@@ -49,6 +48,9 @@ part 'app_database.g.dart';
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
+
+  /// Constructor for background isolate or testing with custom executor
+  AppDatabase.forTesting(super.executor);
 
   // Override DAO instances (generated in _$AppDatabase)
   @override
@@ -126,6 +128,12 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<LocationLog>> getUnsyncedLocationLogs({int limit = 100}) =>
       locationLogsDao.getUnsyncedLocationLogs(limit: limit);
+
+  // DIAGNOSTIC: Debug location sync issues
+  Future<int> countTotalLocationLogs() => locationLogsDao.countTotal();
+  Future<int> countUnsyncedLocationLogs() => locationLogsDao.countUnsynced();
+  Future<List<LocationLog>> getRecentLocationLogs({int limit = 10}) =>
+      locationLogsDao.getRecentLogs(limit: limit);
 
   Future<List<SyncQueueData>> getPendingSyncItems() =>
       syncQueueDao.getPendingSyncItems();

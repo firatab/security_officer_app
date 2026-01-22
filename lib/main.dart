@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:security_officer_app/presentation/screens/home/home_screen.dart';
 import 'core/constants/app_constants.dart';
 import 'core/network/dio_client.dart';
@@ -26,19 +30,18 @@ import 'services/offline_manager.dart';
 import 'services/permission_service.dart';
 import 'services/polling_service.dart';
 import 'services/push_notification_service.dart';
+import 'services/fcm_service.dart';
 import 'services/realtime_data_manager.dart';
 import 'services/sync_service.dart';
 import 'services/timezone_service.dart';
 import 'services/websocket_event_handler.dart';
 import 'services/websocket_service.dart';
+import 'services/workmanager_sync_service.dart';
+import 'firebase_options.dart';
 
 // Core Providers
 final serverConfigProvider = Provider<ServerConfigService>((ref) => throw UnimplementedError());
 final databaseProvider = Provider<AppDatabase>((ref) => AppDatabase());
-
-final dioClientProvider = Provider<DioClient>(
-  (ref) => DioClient(baseUrl: ref.watch(serverConfigProvider).baseUrl),
-);
 
 // Repository Providers
 final shiftRepositoryProvider = Provider<ShiftRepository>(
@@ -83,7 +86,7 @@ final locationTrackingProvider = StateNotifierProvider<LocationTrackingControlle
 final notificationServiceProvider = Provider<NotificationService>((ref) => throw UnimplementedError());
 
 // Timezone Service Provider
-final timezoneServiceProvider = ChangeNotifierProvider<TimezoneService>((ref) => throw UnimplementedError());
+final timezoneServiceProvider = Provider<TimezoneService>((ref) => throw UnimplementedError());
 
 // Controller Providers
 final checkCallControllerProvider = StateNotifierProvider<CheckCallController, CheckCallState>(
@@ -95,8 +98,6 @@ final checkCallControllerProvider = StateNotifierProvider<CheckCallController, C
 );
 
 // WebSocket Providers
-// webSocketProvider is imported from websocket_service.dart
-
 final webSocketEventHandlerProvider = Provider<WebSocketEventHandler>(
   (ref) => WebSocketEventHandler(
     wsController: ref.watch(webSocketProvider.notifier),
@@ -107,7 +108,6 @@ final webSocketEventHandlerProvider = Provider<WebSocketEventHandler>(
   ),
 );
 
-// Realtime Data Manager Provider - handles WebSocket events and updates local state
 final realtimeDataManagerProvider = StateNotifierProvider<RealtimeDataManager, RealtimeDataState>(
   (ref) => RealtimeDataManager(
     wsController: ref.watch(webSocketProvider.notifier),
@@ -118,7 +118,6 @@ final realtimeDataManagerProvider = StateNotifierProvider<RealtimeDataManager, R
   ),
 );
 
-// Polling Service Provider - fallback for when WebSocket is not available (e.g., AWS Amplify)
 final pollingServiceProvider = StateNotifierProvider<PollingService, PollingState>(
   (ref) => PollingService(
     dioClient: ref.watch(dioClientProvider),
@@ -127,13 +126,44 @@ final pollingServiceProvider = StateNotifierProvider<PollingService, PollingStat
   ),
 );
 
-// Offline Manager Provider
 final offlineManagerProvider = StateNotifierProvider<OfflineManager, OfflineState>(
   (ref) => OfflineManager(ref.watch(syncServiceProvider), ref.watch(databaseProvider)),
 );
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Hide only the bottom navigation bar, keep the status bar (top time/battery) visible
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: [SystemUiOverlay.top],
+  );
+  
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarDividerColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ),
+  );
+
+  try {
+    if (kIsWeb) {
+      if (DefaultFirebaseOptions.hasWebConfig) {
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.web);
+        AppLogger.info('Firebase initialized for web');
+      } else {
+        AppLogger.warning('Firebase web config missing; skipping web FCM init');
+      }
+    } else {
+      await Firebase.initializeApp();
+      AppLogger.info('Firebase initialized successfully');
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    }
+  } catch (e) {
+    AppLogger.error('Firebase initialization failed (will use WebSocket only)', e);
+  }
 
   final serverConfig = await ServerConfigService.getInstance();
   final notificationService = NotificationService();
@@ -142,14 +172,19 @@ void main() async {
   final backgroundNotificationService = BackgroundNotificationService();
   await backgroundNotificationService.initialize();
 
-  // Initialize timezone service
   final timezoneService = TimezoneService();
   await timezoneService.initialize();
+
+  final backgroundSyncService = BackgroundSyncService();
+  await backgroundSyncService.initialize();
+
+  final dioClient = DioClient(baseUrl: serverConfig.baseUrl);
 
   runApp(
     ProviderScope(
       overrides: [
         serverConfigProvider.overrideWithValue(serverConfig),
+        dioClientProvider.overrideWithValue(dioClient),
         notificationServiceProvider.overrideWithValue(notificationService),
         timezoneServiceProvider.overrideWithValue(timezoneService),
       ],
@@ -168,19 +203,23 @@ class SecurityOfficerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E40AF),
+          seedColor: const Color(0xFFD84315), // Warmer Deep Orange 800
           brightness: Brightness.light,
+          surface: const Color(0xFFFFF8F1), // Warmer surface tint
         ),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           centerTitle: true,
           elevation: 0,
+          backgroundColor: Color(0xFFD84315),
+          foregroundColor: Colors.white,
         ),
         cardTheme: CardThemeData(
           elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
+          color: Colors.white,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -188,6 +227,8 @@ class SecurityOfficerApp extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
+            backgroundColor: const Color(0xFFD84315),
+            foregroundColor: Colors.white,
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -195,7 +236,7 @@ class SecurityOfficerApp extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           filled: true,
-          fillColor: Colors.grey[50],
+          fillColor: const Color(0xFFFFF3E0), // Very light warm orange
         ),
       ),
       home: const SplashScreen(),
@@ -212,7 +253,7 @@ class SplashScreen extends ConsumerStatefulWidget {
 
 class _SplashScreenState extends ConsumerState<SplashScreen> {
   final PermissionService _permissionService = PermissionService();
-  String _statusMessage = 'Initializing...';
+  String _statusMessage = AppConstants.statusInitializing;
 
   @override
   void initState() {
@@ -221,24 +262,20 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _startupSequence() async {
-    // Brief delay for splash display
     await Future.delayed(const Duration(seconds: 1));
     if (!mounted) return;
 
-    // Step 1: Check permissions
-    setState(() => _statusMessage = 'Checking permissions...');
+    setState(() => _statusMessage = AppConstants.statusCheckingPermissions);
     final permissionStatus = await _permissionService.checkAllPermissions();
 
     if (!mounted) return;
 
-    // If required permissions not granted, show permissions screen
     if (!permissionStatus.allRequiredGranted) {
       AppLogger.info('Required permissions not granted, showing permissions screen');
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) => PermissionsScreen(
             onAllPermissionsGranted: () {
-              // When permissions granted, restart the flow
               Navigator.of(context).pushReplacement(
                 MaterialPageRoute(builder: (context) => const SplashScreen()),
               );
@@ -251,31 +288,37 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
     AppLogger.info('All required permissions granted');
 
-    // Step 2: Check authentication
-    setState(() => _statusMessage = 'Checking authentication...');
+    setState(() => _statusMessage = AppConstants.statusCheckingAuth);
     final isAuthenticated = await ref.read(authServiceProvider).isAuthenticated();
 
     if (!mounted) return;
 
     if (isAuthenticated) {
-      // Step 3: Initialize services
-      setState(() => _statusMessage = 'Loading...');
+      setState(() => _statusMessage = AppConstants.statusLoading);
 
-      // Initialize push notifications (WebSocket-based, no Firebase)
+      try {
+        final fcmService = ref.read(fcmServiceProvider);
+        await fcmService.initialize();
+        AppLogger.info('FCM Service initialized');
+      } catch (e) {
+        AppLogger.error('Failed to initialize FCM (will use WebSocket only)', e);
+      }
+
       try {
         final pushService = ref.read(pushNotificationServiceProvider);
         await pushService.initialize();
         await pushService.registerToken();
+        AppLogger.info('WebSocket push notifications initialized');
       } catch (e) {
-        AppLogger.error('Failed to initialize push notifications', e);
+        AppLogger.error('Failed to initialize WebSocket push notifications', e);
       }
 
-      // Navigate to home
+      if (!mounted) return;
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     } else {
-      // Navigate to login
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const LoginScreen()),
       );
@@ -302,7 +345,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Version ${AppConstants.appVersion}',
+              '${AppConstants.versionLabel} ${AppConstants.appVersion}',
               style: const TextStyle(fontSize: 16, color: Colors.white70),
             ),
             const SizedBox(height: 48),

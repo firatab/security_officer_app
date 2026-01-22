@@ -4,6 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
 import '../core/utils/logger.dart';
+import '../core/constants/app_constants.dart';
 
 /// Notification service for check calls and other alerts
 class NotificationService {
@@ -76,6 +77,41 @@ class NotificationService {
         AndroidFlutterLocalNotificationsPlugin>();
 
     if (androidPlugin != null) {
+      // Location tracking channel - MUST be created BEFORE background service starts
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          AppConstants.locationChannelId,
+          AppConstants.locationChannelName,
+          description: 'Used for location tracking during shifts',
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
+        ),
+      );
+
+      // Background sync notification channels
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'shift_updates',
+          'Shift Updates',
+          description: 'Notifications for shift assignments and changes',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+
+      await androidPlugin.createNotificationChannel(
+        const AndroidNotificationChannel(
+          'check_call_reminders',
+          'Check Call Reminders',
+          description: 'Reminders for upcoming check calls',
+          importance: Importance.max,
+          playSound: true,
+          enableVibration: true,
+        ),
+      );
+
       // Check call channel with alarm sound
       await androidPlugin.createNotificationChannel(
         const AndroidNotificationChannel(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/constants/app_constants.dart';
+import '../core/constants/api_endpoints.dart';
 import '../core/network/dio_client.dart';
 import '../core/utils/logger.dart';
 import '../data/repositories/shift_repository.dart';
@@ -43,8 +44,6 @@ class PollingService extends StateNotifier<PollingState> {
   final NotificationService _notificationService;
 
   Timer? _pollTimer;
-  DateTime? _lastKnownShiftUpdate;
-  DateTime? _lastKnownAttendanceUpdate;
 
   // Callbacks for data updates
   Function()? onShiftsUpdated;
@@ -102,9 +101,6 @@ class PollingService extends StateNotifier<PollingState> {
       // Poll for shifts and attendance updates
       final shiftsUpdated = await _pollShifts();
 
-      // Poll for check call alerts
-      await _pollCheckCalls();
-
       // Poll for notifications
       await _pollNotifications();
 
@@ -139,66 +135,104 @@ class PollingService extends StateNotifier<PollingState> {
     }
   }
 
-  /// Poll for check call alerts
-  Future<void> _pollCheckCalls() async {
-    try {
-      final response = await _dioClient.dio.get('/api/check-calls/pending');
-
-      if (response.statusCode == 200 && response.data != null) {
-        final checkCalls = response.data['checkCalls'] as List<dynamic>? ?? [];
-
-        for (final checkCall in checkCalls) {
-          final id = checkCall['id'] as String?;
-          final siteName = checkCall['siteName'] as String? ?? 'your site';
-          final status = checkCall['status'] as String?;
-
-          if (status == 'pending' && id != null) {
-            await _notificationService.showCheckCallNotification(
-              checkCallId: id,
-              siteName: siteName,
-              message: 'Check call required now! Please respond.',
-            );
-            onCheckCallAlert?.call();
-          }
-        }
-      }
-    } catch (e) {
-      // Silent fail - check calls might not have an endpoint yet
-      AppLogger.debug('Check calls polling: ${e.toString()}');
-    }
-  }
-
   /// Poll for notifications
   Future<void> _pollNotifications() async {
     try {
+      final since = state.lastPollTime?.toIso8601String();
+
       final response = await _dioClient.dio.get(
-        '/api/mobile/notifications',
-        queryParameters: {'unreadOnly': true, 'limit': 10},
+        ApiEndpoints.mobileNotifications,
+        queryParameters: {
+          if (since != null) 'since': since,
+        },
       );
 
       if (response.statusCode == 200 && response.data != null) {
-        final notifications = response.data['notifications'] as List<dynamic>? ?? [];
+        final notifications = response.data['data'] as List<dynamic>? ?? [];
 
         for (final notification in notifications) {
-          final id = notification['id'] as String?;
-          final title = notification['title'] as String? ?? 'Notification';
-          final body = notification['body'] as String? ?? '';
-          final isRead = notification['isRead'] as bool? ?? false;
-
-          if (!isRead && id != null) {
-            await _notificationService.showGeneralNotification(
-              id: id.hashCode,
-              title: title,
-              body: body,
-              payload: 'notification:$id',
-            );
-            onNotification?.call(title, body);
+          if (notification is Map<String, dynamic>) {
+            await _showMobileNotification(notification);
           }
         }
       }
     } catch (e) {
       // Silent fail
       AppLogger.debug('Notifications polling: ${e.toString()}');
+    }
+  }
+
+  Future<void> _showMobileNotification(Map<String, dynamic> notification) async {
+    final type = notification['type'] as String?;
+    final id = notification['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+
+    switch (type) {
+      case 'new_job_assignment':
+        final shiftData = notification['shift'] as Map<String, dynamic>?;
+        if (shiftData == null) {
+          return;
+        }
+
+        final shiftId = shiftData['id'] as String? ?? id;
+        final siteName = shiftData['siteName'] as String? ?? 'Unknown Site';
+        final startTimeStr = shiftData['startTime'] as String?;
+        final startTime = DateTime.tryParse(startTimeStr ?? '') ?? DateTime.now();
+
+        await _notificationService.showNewJobNotification(
+          shiftId: shiftId,
+          siteName: siteName,
+          startTime: startTime,
+        );
+
+        final dateStr = '${startTime.day}/${startTime.month}/${startTime.year}';
+        final timeStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+        onNotification?.call(
+          'New Job Assignment',
+          'You have been assigned to $siteName on $dateStr at $timeStr.',
+        );
+        break;
+
+      case 'check_call_reminder':
+        final checkCallId = notification['checkCallId'] as String? ?? id;
+        final siteName = notification['siteName'] as String? ?? 'your site';
+        final message = notification['message'] as String? ?? 'Check call required now! Please respond.';
+
+        await _notificationService.showCheckCallNotification(
+          checkCallId: checkCallId,
+          siteName: siteName,
+          message: message,
+        );
+        onCheckCallAlert?.call();
+        onNotification?.call('Check Call', message);
+        break;
+
+      case 'shift_update':
+        final title = notification['title'] as String? ?? 'Shift Update';
+        final message = notification['message'] as String? ?? 'Your shift has been updated.';
+
+        await _notificationService.showGeneralNotification(
+          id: id.hashCode,
+          title: title,
+          body: message,
+          payload: 'notification:$id',
+        );
+        onNotification?.call(title, message);
+        break;
+
+      default:
+        final title = notification['title'] as String? ?? 'Notification';
+        final message = notification['message'] as String? ?? '';
+        if (title.isEmpty && message.isEmpty) {
+          return;
+        }
+
+        await _notificationService.showGeneralNotification(
+          id: id.hashCode,
+          title: title,
+          body: message,
+          payload: 'notification:$id',
+        );
+        onNotification?.call(title, message);
     }
   }
 

@@ -7,6 +7,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Apply Google Services plugin only if google-services.json exists
+// This prevents build failures when Firebase is not yet configured
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -63,4 +69,13 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    
+    // Firebase dependencies - only needed if google-services.json is present
+    // Without Firebase, the app will fall back to WebSocket-only notifications
+    if (file("google-services.json").exists()) {
+        // Firebase BoM - manages Firebase library versions
+        implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+        implementation("com.google.firebase:firebase-messaging-ktx")
+        implementation("com.google.firebase:firebase-analytics-ktx")
+    }
 }

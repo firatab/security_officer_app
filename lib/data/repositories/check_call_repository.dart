@@ -18,6 +18,10 @@ class CheckCallRepository {
     return await _database.checkCallsDao.getCheckCallsForShift(shiftId);
   }
 
+  Future<CheckCall?> getCheckCallById(String checkCallId) async {
+    return await _database.checkCallsDao.getCheckCallById(checkCallId);
+  }
+
   /// Create check calls for a shift based on frequency
   Future<void> createCheckCallsForShift({
     required String shiftId,
@@ -56,18 +60,24 @@ class CheckCallRepository {
   }
 
   Future<void> respondToCheckCallOnline({
+    required String shiftId,
     required String checkCallId,
     required double latitude,
     required double longitude,
     String? notes,
+    DateTime? scheduledTime,
+    String status = 'ok',
   }) async {
     try {
       await _dioClient.post(
-        ApiEndpoints.checkCallRespond(checkCallId),
+        ApiEndpoints.checkCallsForShift(shiftId),
         data: {
+          'checkType': 'manual',
+          'status': status,
           'latitude': latitude,
           'longitude': longitude,
           'notes': notes,
+          if (scheduledTime != null) 'scheduledTime': scheduledTime.toIso8601String(),
         },
       );
     } catch (e) {
@@ -87,10 +97,12 @@ class CheckCallRepository {
     required String shiftId,
     required String checkCallId,
     required String status,
+    DateTime? scheduledTime,
     String? notes,
     double? latitude,
     double? longitude,
   }) async {
+    final resolvedScheduledTime = scheduledTime ?? DateTime.now();
     try {
       await _dioClient.post(
         ApiEndpoints.checkCallsForShift(shiftId),
@@ -100,7 +112,7 @@ class CheckCallRepository {
           'latitude': latitude,
           'longitude': longitude,
           'notes': notes,
-          'scheduledTime': DateTime.now().toIso8601String(),
+          'scheduledTime': resolvedScheduledTime.toIso8601String(),
         },
       );
 
@@ -136,6 +148,7 @@ class CheckCallRepository {
             'notes': notes,
             'latitude': latitude,
             'longitude': longitude,
+            'scheduledTime': resolvedScheduledTime.toIso8601String(),
             'timestamp': DateTime.now().toIso8601String(),
           }),
           entityType: const Value('check_call'),
@@ -149,10 +162,9 @@ class CheckCallRepository {
 
   Future<void> markCheckCallMissed(String checkCallId) async {
     try {
-      await _dioClient.post(ApiEndpoints.checkCallMissed(checkCallId));
-    } catch (e) {
-      AppLogger.error('Error marking check call missed online, saving offline', e);
       await _database.checkCallsDao.markCheckCallMissed(checkCallId);
+    } catch (e) {
+      AppLogger.error('Error marking check call missed locally', e);
     }
   }
 

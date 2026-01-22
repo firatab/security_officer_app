@@ -33,4 +33,27 @@ class LocationLogsDao extends DatabaseAccessor<AppDatabase> {
     }
     return count;
   }
+
+  /// DIAGNOSTIC METHODS - for debugging sync issues
+  
+  Future<int> countTotal() async {
+    final query = selectOnly(_locationLogs)..addColumns([_locationLogs.id.count()]);
+    final result = await query.getSingle();
+    return result.read(_locationLogs.id.count()) ?? 0;
+  }
+
+  Future<int> countUnsynced() async {
+    final query = selectOnly(_locationLogs)
+      ..where(_locationLogs.needsSync.equals(true))
+      ..addColumns([_locationLogs.id.count()]);
+    final result = await query.getSingle();
+    return result.read(_locationLogs.id.count()) ?? 0;
+  }
+
+  Future<List<LocationLog>> getRecentLogs({int limit = 10}) {
+    return (select(_locationLogs)
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.timestamp)])
+          ..limit(limit))
+        .get();
+  }
 }

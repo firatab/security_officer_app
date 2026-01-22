@@ -10,6 +10,11 @@ class CheckCallsDao extends DatabaseAccessor<AppDatabase> {
     return (select(_checkCalls)..where((tbl) => tbl.shiftId.equals(shiftId))).get();
   }
 
+  Future<CheckCall?> getCheckCallById(String checkCallId) {
+    return (select(_checkCalls)..where((tbl) => tbl.id.equals(checkCallId)))
+        .getSingleOrNull();
+  }
+
   Future<List<CheckCall>> getPendingCheckCalls(String employeeId) {
     return (select(_checkCalls)
           ..where((tbl) =>

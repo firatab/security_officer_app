@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "721900633564",
+    "project_id": "sentraguard-5f1a1",
+    "storage_bucket": "sentraguard-5f1a1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:721900633564:android:fec2c50c17991558562319",
+        "android_client_info": {
+          "package_name": "com.securityforce.security_officer_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLqO8SqvgZ4SPOgqQxnu1QdP6rwAEsXIQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

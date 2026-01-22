@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/drift.dart' as drift;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../core/constants/api_endpoints.dart';
 import '../core/errors/exceptions.dart';
@@ -58,6 +59,9 @@ class SyncService {
       final normalResult = await _processPriorityQueue(SyncPriority.normal);
       processed += normalResult.processed;
       failed += normalResult.failed;
+
+      // First, recover any pending locations from SharedPreferences (from background service fallback)
+      await _recoverPendingLocationsFromPrefs();
 
       // Sync location logs (low priority background task)
       final locationsSynced = await _syncLocationLogs();
@@ -399,19 +403,69 @@ class SyncService {
     }
   }
 
+  /// Recover pending locations from SharedPreferences (when background service couldn't use database)
+  Future<void> _recoverPendingLocationsFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pendingJson = prefs.getStringList('pending_locations');
+
+      if (pendingJson == null || pendingJson.isEmpty) {
+        return;
+      }
+
+      AppLogger.info('Recovering ${pendingJson.length} pending locations from SharedPreferences');
+
+      int recovered = 0;
+      for (final jsonStr in pendingJson) {
+        try {
+          final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+          // Insert into database
+          final companion = LocationLogsCompanion.insert(
+            id: data['id'] as String? ?? _uuid.v4(),
+            employeeId: data['employeeId'] as String,
+            tenantId: data['tenantId'] as String,
+            shiftId: drift.Value(data['shiftId'] as String?),
+            latitude: (data['latitude'] as num).toDouble(),
+            longitude: (data['longitude'] as num).toDouble(),
+            accuracy: drift.Value((data['accuracy'] as num?)?.toDouble()),
+            altitude: drift.Value((data['altitude'] as num?)?.toDouble()),
+            speed: drift.Value((data['speed'] as num?)?.toDouble()),
+            timestamp: data['timestamp'] != null
+                ? DateTime.parse(data['timestamp'] as String)
+                : DateTime.now(),
+            needsSync: const drift.Value(true),
+          );
+
+          await _database.into(_database.locationLogs).insert(companion);
+          recovered++;
+        } catch (e) {
+          AppLogger.error('Error recovering location from prefs', e);
+        }
+      }
+
+      // Clear the pending locations from SharedPreferences
+      await prefs.remove('pending_locations');
+      AppLogger.info('Recovered $recovered pending locations from SharedPreferences');
+    } catch (e) {
+      AppLogger.error('Error recovering pending locations from SharedPreferences', e);
+    }
+  }
+
   /// Sync location logs to server
   Future<int> _syncLocationLogs() async {
     try {
       final unsyncedLogs = await _database.getUnsyncedLocationLogs(limit: 100);
 
       if (unsyncedLogs.isEmpty) {
+        AppLogger.debug('No unsynced location logs to sync');
         return 0;
       }
 
-      AppLogger.debug('Syncing ${unsyncedLogs.length} location logs');
+      AppLogger.info('📍 Syncing ${unsyncedLogs.length} location logs to backend...');
 
       // Convert to API format
-      final locationData = unsyncedLogs.map((log) => {
+      final locationData = unsyncedLogs.map((log) => <String, dynamic>{
         'id': log.id,
         'employeeId': log.employeeId,
         'shiftId': log.shiftId,
@@ -439,14 +493,14 @@ class SyncService {
           syncedAt: drift.Value(DateTime.now()),
         ));
 
-        AppLogger.info('Synced ${unsyncedLogs.length} location logs');
+        AppLogger.info('✅ Successfully synced ${unsyncedLogs.length} location logs to backend');
         return unsyncedLogs.length;
       } else {
-        AppLogger.warning('Location sync failed: ${response.statusCode}');
+        AppLogger.warning('❌ Location sync failed with status: ${response.statusCode}');
         return 0;
       }
     } catch (e) {
-      AppLogger.error('Error syncing location logs', e);
+      AppLogger.error('❌ Error syncing location logs to backend', e);
       return 0;
     }
   }

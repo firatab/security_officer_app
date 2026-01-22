@@ -86,7 +86,9 @@ class _CheckCallResponseScreenState extends ConsumerState<CheckCallResponseScree
   Future<void> _getCurrentLocation() async {
     try {
       _currentPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
     } catch (e) {
       AppLogger.error('Error getting location for check call', e);
@@ -118,6 +120,7 @@ class _CheckCallResponseScreenState extends ConsumerState<CheckCallResponseScree
         shiftId: widget.shiftId,
         checkCallId: widget.checkCallId,
         status: _selectedStatus,
+        scheduledTime: widget.scheduledTime,
         notes: _notesController.text.isNotEmpty ? _notesController.text : null,
         latitude: _currentPosition?.latitude,
         longitude: _currentPosition?.longitude,
@@ -175,7 +178,7 @@ class _CheckCallResponseScreenState extends ConsumerState<CheckCallResponseScree
     final urgencyColor = _getUrgencyColor();
 
     return Scaffold(
-      backgroundColor: urgencyColor.withOpacity(0.1),
+      backgroundColor: urgencyColor.withValues(alpha: 0.1),
       appBar: AppBar(
         title: const Text('Check Call Required'),
         backgroundColor: urgencyColor,
@@ -193,8 +196,8 @@ class _CheckCallResponseScreenState extends ConsumerState<CheckCallResponseScree
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: urgencyColor.withOpacity(
-                      widget.isUrgent ? 0.3 + (_pulseController.value * 0.2) : 0.2,
+                    color: urgencyColor.withValues(
+                      alpha: widget.isUrgent ? 0.3 + (_pulseController.value * 0.2) : 0.2,
                     ),
                   ),
                   child: Column(

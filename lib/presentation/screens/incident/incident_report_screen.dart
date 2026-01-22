@@ -51,14 +51,14 @@ class IncidentReportScreen extends ConsumerWidget {
         children: [
           _buildDropdown(
             label: 'Incident Type',
-            value: state.incidentType,
+            initialValue: state.incidentType,
             items: ['Safety Hazard', 'Theft', 'Damage', 'Medical', 'Other'],
             onChanged: viewModel.onIncidentTypeChanged,
           ),
           const SizedBox(height: 16),
           _buildDropdown(
             label: 'Severity',
-            value: state.severity,
+            initialValue: state.severity,
             items: ['Low', 'Medium', 'High', 'Critical'],
             onChanged: viewModel.onSeverityChanged,
           ),
@@ -75,12 +75,12 @@ class IncidentReportScreen extends ConsumerWidget {
 
   Widget _buildDropdown({
     required String label,
-    required String value,
+    required String initialValue,
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: initialValue,
       decoration: InputDecoration(labelText: label),
       items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
       onChanged: onChanged,

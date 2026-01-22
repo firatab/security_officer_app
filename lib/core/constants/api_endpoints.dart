@@ -9,6 +9,9 @@ class ApiEndpoints {
   static const String employeeProfile = '/api/employees/me';
   static const String employeeShifts = '/api/employees/me/shifts';
 
+  // Shifts
+  static const String shifts = '/api/shifts/my-shifts';
+
   // Attendance
   static const String bookOn = '/api/attendance/book-on';
   static const String bookOff = '/api/attendance/book-off';
@@ -18,15 +21,13 @@ class ApiEndpoints {
 
   // Check Calls
   static const String checkCalls = '/api/check-calls';
-  static String checkCallRespond(String id) => '/api/check-calls/$id/respond';
-  static String checkCallMissed(String id) => '/api/check-calls/$id/missed';
   static String checkCallsForShift(String shiftId) => '/api/shifts/$shiftId/check-calls';
 
   // Incident Reports
   static const String incidentReports = '/api/incidents';
 
   // Emergency
-  static const String panicAlert = '/api/emergency/panic';
+  static const String panicAlert = '/api/safety/panic';
 
   // Patrols (Legacy)
   static const String patrols = '/api/patrols';
@@ -51,11 +52,12 @@ class ApiEndpoints {
 
   // Notifications
   static const String notifications = '/api/notifications';
+  static const String mobileNotifications = '/api/mobile/notifications';
   static String markNotificationRead(String id) => '/api/notifications/$id/read';
 
   // Push Notifications / FCM Token
-  static const String registerFcmToken = '/api/notifications/push-token';
-  static const String unregisterFcmToken = '/api/notifications/push-token';
+  static const String registerFcmToken = '/api/auth/fcm-token';
+  static const String unregisterFcmToken = '/api/auth/fcm-token';
 
   // Sites
   static const String sites = '/api/sites';
