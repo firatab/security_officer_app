@@ -6,6 +6,8 @@ import 'package:timezone/data/latest.dart' as tz_data;
 import '../core/utils/logger.dart';
 import '../core/constants/app_constants.dart';
 
+import 'notification_dedup_service.dart';
+
 /// Notification service for check calls and other alerts
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -13,6 +15,7 @@ class NotificationService {
   NotificationService._internal();
 
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  final NotificationDedupService _dedupService = NotificationDedupService();
   bool _initialized = false;
   bool _permissionsGranted = false;
 
@@ -195,11 +198,18 @@ class NotificationService {
     }
     if (!_permissionsGranted) {
       AppLogger.warning('Notification permissions not granted. Cannot show notification.');
-      // Optionally, you could try to request permissions again here
-      // _permissionsGranted = await requestPermissions();
-      // if (!_permissionsGranted) return;
       return;
     }
+    
+    // Check for duplicates using payload or create ID from title+body
+    final notifId = payload ?? '$title:$body';
+    final shouldShow = await _dedupService.shouldShowNotification(notifId);
+    
+    if (!shouldShow) {
+      AppLogger.debug('Skipping duplicate notification: $title');
+      return;
+    }
+    
     await _notifications.show(id, title, body, details, payload: payload);
   }
   

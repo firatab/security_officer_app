@@ -7,6 +7,8 @@ import '../core/utils/logger.dart';
 import '../core/network/dio_client.dart';
 import 'notification_service.dart';
 
+import 'notification_dedup_service.dart';
+
 /// Provider for FCM Service
 final fcmServiceProvider = Provider<FCMService>((ref) {
   return FCMService(ref);
@@ -18,6 +20,7 @@ class FCMService {
   final Ref _ref;
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final NotificationService _notificationService = NotificationService();
+  final NotificationDedupService _dedupService = NotificationDedupService();
   
   String? _fcmToken;
   bool _initialized = false;
@@ -84,8 +87,17 @@ class FCMService {
   }
 
   /// Handle foreground message (app is open and active)
-  void _handleForegroundMessage(RemoteMessage message) {
+  void _handleForegroundMessage(RemoteMessage message) async {
     AppLogger.info('FCM: Foreground message received: ${message.notification?.title}');
+    
+    // Check for duplicate using message ID
+    final messageId = message.messageId ?? message.data.toString().hashCode.abs().toString();
+    final shouldShow = await _dedupService.shouldShowNotification(messageId);
+    
+    if (!shouldShow) {
+      AppLogger.debug('Skipping duplicate FCM message: $messageId');
+      return;
+    }
     
     if (message.notification != null) {
       // Show local notification using flutter_local_notifications
@@ -93,7 +105,7 @@ class FCMService {
         id: message.hashCode,
         title: message.notification!.title ?? 'Notification',
         body: message.notification!.body ?? '',
-        payload: message.data.toString(),
+        payload: messageId, // Use messageId as payload for tracking
       );
     }
   }

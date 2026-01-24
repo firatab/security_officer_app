@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/api_endpoints.dart';
+import 'notification_dedup_service.dart';
 
 /// WorkManager callback dispatcher (MUST be top-level function)
 @pragma('vm:entry-point')
@@ -240,6 +241,17 @@ Future<void> _showNotification(
   String channelId,
   int id,
 ) async {
+  // Check for duplicate
+  // Use abstract hash as ID if no specific ID tracked by caller
+  final dedupId = '$id:${title.hashCode}:${body.hashCode}'; 
+  final dedupService = NotificationDedupService();
+  final shouldShow = await dedupService.shouldShowNotification(dedupId);
+  
+  if (!shouldShow) {
+    print('📱 [Background] Skipping duplicate notification: $title');
+    return;
+  }
+
   final androidDetails = AndroidNotificationDetails(
     channelId,
     channelId == 'shift_updates' ? 'Shift Updates' : 'Check Call Reminders',
