@@ -4,6 +4,7 @@ class ApiEndpoints {
   static const String login = '/api/auth/login';
   static const String logout = '/api/auth/logout';
   static const String refreshToken = '/api/auth/refresh';
+  static const String validateTenantCode = '/api/tenant/validate-code';
 
   // Employee
   static const String employeeProfile = '/api/employees/me';
@@ -21,7 +22,8 @@ class ApiEndpoints {
 
   // Check Calls
   static const String checkCalls = '/api/check-calls';
-  static String checkCallsForShift(String shiftId) => '/api/shifts/$shiftId/check-calls';
+  static String checkCallsForShift(String shiftId) =>
+      '/api/shifts/$shiftId/check-calls';
 
   // Incident Reports
   static const String incidentReports = '/api/incidents';
@@ -31,13 +33,16 @@ class ApiEndpoints {
 
   // Patrols (Legacy)
   static const String patrols = '/api/patrols';
-  static String patrolCheckpoints(String patrolId) => '/api/patrols/$patrolId/checkpoints';
-  static String logCheckpoint(String checkpointId) => '/api/patrols/checkpoints/$checkpointId/scan';
+  static String patrolCheckpoints(String patrolId) =>
+      '/api/patrols/$patrolId/checkpoints';
+  static String logCheckpoint(String checkpointId) =>
+      '/api/patrols/checkpoints/$checkpointId/scan';
 
   // Patrol Tours
   static const String patrolTours = '/api/patrol/tours';
   static String patrolTourDetails(String id) => '/api/patrol/tours/$id';
-  static String patrolTourPoints(String tourId) => '/api/patrol/tours/$tourId/points';
+  static String patrolTourPoints(String tourId) =>
+      '/api/patrol/tours/$tourId/points';
 
   // Patrol Schedules
   static const String patrolSchedules = '/api/patrol/schedules';
@@ -49,11 +54,11 @@ class ApiEndpoints {
   static String completePatrolPoint(String instanceId, String pointId) =>
       '/api/patrol/instances/$instanceId/points/$pointId';
 
-
   // Notifications
   static const String notifications = '/api/notifications';
   static const String mobileNotifications = '/api/mobile/notifications';
-  static String markNotificationRead(String id) => '/api/notifications/$id/read';
+  static String markNotificationRead(String id) =>
+      '/api/notifications/$id/read';
 
   // Push Notifications / FCM Token
   static const String registerFcmToken = '/api/auth/fcm-token';

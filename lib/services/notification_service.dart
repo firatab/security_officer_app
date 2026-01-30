@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,15 +15,23 @@ class NotificationService {
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
   final NotificationDedupService _dedupService = NotificationDedupService();
+
+  // Stream controller for notification taps
+  final StreamController<String> _onNotificationTapController =
+      StreamController<String>.broadcast();
+  Stream<String> get onNotificationTap => _onNotificationTapController.stream;
+
   bool _initialized = false;
   bool _permissionsGranted = false;
 
   // Notification channels
   static const String checkCallChannelId = 'check_call_channel';
   static const String checkCallChannelName = 'Check Calls';
-  static const String checkCallChannelDescription = 'Notifications for security check calls';
+  static const String checkCallChannelDescription =
+      'Notifications for security check calls';
 
   static const String generalChannelId = 'general_channel';
   static const String generalChannelName = 'General';
@@ -30,7 +39,8 @@ class NotificationService {
 
   static const String newJobChannelId = 'new_job_channel';
   static const String newJobChannelName = 'New Job Assignments';
-  static const String newJobChannelDescription = 'Notifications for new job assignments';
+  static const String newJobChannelDescription =
+      'Notifications for new job assignments';
 
   // Notification IDs
   static const int checkCallNotificationId = 1000;
@@ -45,7 +55,9 @@ class NotificationService {
     tz_data.initializeTimeZones();
 
     // Android initialization
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     // iOS initialization
     const iosSettings = DarwinInitializationSettings(
@@ -71,13 +83,17 @@ class NotificationService {
     _permissionsGranted = await requestPermissions();
 
     _initialized = true;
-    AppLogger.info('Notification service initialized. Permissions granted: $_permissionsGranted');
+    AppLogger.info(
+      'Notification service initialized. Permissions granted: $_permissionsGranted',
+    );
   }
 
   /// Create Android notification channels
   Future<void> _createNotificationChannels() async {
-    final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
 
     if (androidPlugin != null) {
       // Location tracking channel - MUST be created BEFORE background service starts
@@ -156,7 +172,9 @@ class NotificationService {
   /// Handle notification tap
   void _onNotificationTapped(NotificationResponse response) {
     AppLogger.info('Notification tapped: ${response.payload}');
-    // Handle navigation based on payload
+    if (response.payload != null) {
+      _onNotificationTapController.add(response.payload!);
+    }
   }
 
   /// Request notification permissions
@@ -165,13 +183,17 @@ class NotificationService {
 
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
-        final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
+        final androidPlugin = _notifications
+            .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin
+            >();
         final granted = await androidPlugin?.requestNotificationsPermission();
         return granted ?? false;
       } else if (defaultTargetPlatform == TargetPlatform.iOS) {
-        final iosPlugin = _notifications.resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
+        final iosPlugin = _notifications
+            .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin
+            >();
         final granted = await iosPlugin?.requestPermissions(
           alert: true,
           badge: true,
@@ -189,30 +211,34 @@ class NotificationService {
     int id,
     String title,
     String body,
-    NotificationDetails details,
-    {String? payload}
-  ) async {
+    NotificationDetails details, {
+    String? payload,
+  }) async {
     if (!_initialized) {
-      AppLogger.warning('Notification service not initialized. Cannot show notification.');
+      AppLogger.warning(
+        'Notification service not initialized. Cannot show notification.',
+      );
       return;
     }
     if (!_permissionsGranted) {
-      AppLogger.warning('Notification permissions not granted. Cannot show notification.');
+      AppLogger.warning(
+        'Notification permissions not granted. Cannot show notification.',
+      );
       return;
     }
-    
+
     // Check for duplicates using payload or create ID from title+body
     final notifId = payload ?? '$title:$body';
     final shouldShow = await _dedupService.shouldShowNotification(notifId);
-    
+
     if (!shouldShow) {
       AppLogger.debug('Skipping duplicate notification: $title');
       return;
     }
-    
+
     await _notifications.show(id, title, body, details, payload: payload);
   }
-  
+
   /// Show check call notification (high priority with alarm)
   Future<void> showCheckCallNotification({
     required String checkCallId,
@@ -241,10 +267,7 @@ class NotificationService {
           'Respond Now',
           showsUserInterface: true,
         ),
-        AndroidNotificationAction(
-          'snooze',
-          'Snooze 5 min',
-        ),
+        AndroidNotificationAction('snooze', 'Snooze 5 min'),
       ],
     );
 
@@ -323,7 +346,8 @@ class NotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
-      interruptionLevel: InterruptionLevel.critical, // Will play even in silent mode
+      interruptionLevel:
+          InterruptionLevel.critical, // Will play even in silent mode
       sound: 'alarm.aiff', // Custom alarm sound
     );
 
@@ -340,10 +364,13 @@ class NotificationService {
       'CHECK CALL - RESPOND NOW',
       '$siteName: $message',
       details,
-      payload: 'check_call_alarm:$checkCallId:$shiftId:${scheduledTime?.toIso8601String()}:${dueTime?.toIso8601String()}',
+      payload:
+          'check_call_alarm:$checkCallId:$shiftId:${scheduledTime?.toIso8601String()}:${dueTime?.toIso8601String()}',
     );
 
-    AppLogger.warning('CHECK CALL ALARM notification shown for: $checkCallId (urgent: $isUrgent)');
+    AppLogger.warning(
+      'CHECK CALL ALARM notification shown for: $checkCallId (urgent: $isUrgent)',
+    );
   }
 
   /// Cancel the check call alarm notification
@@ -359,8 +386,10 @@ class NotificationService {
     required DateTime scheduledTime,
     String? message,
   }) async {
-     if (!_permissionsGranted) {
-      AppLogger.warning('Notification permissions not granted. Cannot schedule notification.');
+    if (!_permissionsGranted) {
+      AppLogger.warning(
+        'Notification permissions not granted. Cannot schedule notification.',
+      );
       return;
     }
     final vibrationPattern = Int64List.fromList([0, 500, 200, 500, 200, 500]);
@@ -392,7 +421,8 @@ class NotificationService {
     );
 
     // Generate unique ID from checkCallId hash
-    final notificationId = checkCallId.hashCode.abs() % 100000 + checkCallNotificationId;
+    final notificationId =
+        checkCallId.hashCode.abs() % 100000 + checkCallNotificationId;
 
     await _notifications.zonedSchedule(
       notificationId,
@@ -404,12 +434,15 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
     );
 
-    AppLogger.info('Scheduled check call notification for $scheduledTime: $checkCallId');
+    AppLogger.info(
+      'Scheduled check call notification for $scheduledTime: $checkCallId',
+    );
   }
 
   /// Cancel a scheduled check call notification
   Future<void> cancelCheckCallNotification(String checkCallId) async {
-    final notificationId = checkCallId.hashCode.abs() % 100000 + checkCallNotificationId;
+    final notificationId =
+        checkCallId.hashCode.abs() % 100000 + checkCallNotificationId;
     await _notifications.cancel(notificationId);
     AppLogger.info('Cancelled check call notification: $checkCallId');
   }
@@ -455,10 +488,12 @@ class NotificationService {
 
     // Format the date and time
     final dateStr = '${startTime.day}/${startTime.month}/${startTime.year}';
-    final timeStr = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+    final timeStr =
+        '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
 
     // Generate unique notification ID
-    final notificationId = shiftId.hashCode.abs() % 100000 + newJobNotificationId;
+    final notificationId =
+        shiftId.hashCode.abs() % 100000 + newJobNotificationId;
 
     await _showNotification(
       notificationId,
@@ -468,7 +503,9 @@ class NotificationService {
       payload: 'new_job:$shiftId',
     );
 
-    AppLogger.info('New job notification shown for shift: $shiftId at $siteName');
+    AppLogger.info(
+      'New job notification shown for shift: $shiftId at $siteName',
+    );
   }
 
   /// Show shift reminder notification
@@ -496,7 +533,8 @@ class NotificationService {
       iOS: iosDetails,
     );
 
-    final timeString = '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
+    final timeString =
+        '${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}';
 
     await _showNotification(
       shiftReminderNotificationId,

@@ -18,14 +18,41 @@ class AuthService {
 
   AuthService(this._dioClient, this._database);
 
-  /// Login with email, password, and organization slug
-  Future<LoginResponse> login(String email, String password, {String? organizationSlug}) async {
+  /// Check if tenant is configured before allowing login
+  Future<bool> isTenantConfigured() async {
+    final activeTenant = await _database.tenantConfigDao.getActiveTenant();
+    return activeTenant != null;
+  }
+
+  /// Get active tenant configuration
+  Future<TenantConfigData?> getActiveTenant() async {
+    return await _database.tenantConfigDao.getActiveTenant();
+  }
+
+  /// Login with email and password (tenant must be configured first)
+  Future<LoginResponse> login(
+    String email,
+    String password, {
+    String? organizationSlug,
+  }) async {
     try {
+      // Ensure tenant is configured
+      final activeTenant = await getActiveTenant();
+      if (activeTenant == null) {
+        throw AuthException(
+          'No tenant configured. Please set up your organization first.',
+        );
+      }
+
+      // Update Dio base URL to tenant-specific URL
+      _dioClient.dio.options.baseUrl = activeTenant.apiBaseUrl;
+
       final response = await _dioClient.dio.post(
         ApiEndpoints.login,
         data: {
           'email': email,
           'password': password,
+          'tenantId': activeTenant.tenantId,
           if (organizationSlug != null && organizationSlug.isNotEmpty)
             'tenantSlug': organizationSlug,
         },
@@ -33,6 +60,14 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final loginResponse = LoginResponse.fromJson(response.data);
+
+        // Verify response tenantId matches active tenant
+        if (loginResponse.user.tenantId != null &&
+            loginResponse.user.tenantId != activeTenant.tenantId) {
+          throw AuthException(
+            'Tenant mismatch. Please reconfigure your organization.',
+          );
+        }
 
         // Store tokens and user info (including organization slug)
         await _saveAuthData(loginResponse, organizationSlug: organizationSlug);
@@ -43,7 +78,9 @@ class AuthService {
         // Start background notification service
         await _startBackgroundNotifications();
 
-        AppLogger.info('Login successful for user: ${loginResponse.user.email}');
+        AppLogger.info(
+          'Login successful for user: ${loginResponse.user.email} on tenant: ${activeTenant.tenantId}',
+        );
         return loginResponse;
       } else {
         throw AuthException('Login failed: ${response.statusMessage}');
@@ -68,7 +105,8 @@ class AuthService {
   }
 
   /// Logout and clear all local data
-  Future<void> logout() async {
+  /// If [switchingTenant] is true, preserve tenant configuration
+  Future<void> logout({bool switchingTenant = false}) async {
     try {
       // Stop background notification service
       await _stopBackgroundNotifications();
@@ -82,12 +120,38 @@ class AuthService {
 
       // Clear all auth data and local database
       await _clearAuthData();
-      await _database.clearAllData();
 
-      AppLogger.info('Logout successful');
+      // Only clear database if not switching tenants
+      if (!switchingTenant) {
+        await _database.clearAllData();
+      }
+
+      AppLogger.info('Logout successful (switchingTenant: $switchingTenant)');
     } catch (e) {
       AppLogger.error('Error during logout', e);
       throw AuthException('Logout failed: $e');
+    }
+  }
+
+  /// Switch to a different configured tenant (logout + clear data except tenant config)
+  Future<void> switchTenant(int newTenantId) async {
+    try {
+      // Logout but preserve tenant data
+      await logout(switchingTenant: true);
+
+      // Set new active tenant
+      await _database.tenantConfigDao.setActiveTenant(newTenantId);
+
+      // Update Dio base URL
+      final newTenant = await _database.tenantConfigDao.getActiveTenant();
+      if (newTenant != null) {
+        _dioClient.dio.options.baseUrl = newTenant.apiBaseUrl;
+      }
+
+      AppLogger.info('Switched to tenant: $newTenantId');
+    } catch (e) {
+      AppLogger.error('Error during tenant switch', e);
+      throw AuthException('Failed to switch tenant: $e');
     }
   }
 
@@ -124,7 +188,10 @@ class AuthService {
   }
 
   /// Save authentication data to secure storage
-  Future<void> _saveAuthData(LoginResponse loginResponse, {String? organizationSlug}) async {
+  Future<void> _saveAuthData(
+    LoginResponse loginResponse, {
+    String? organizationSlug,
+  }) async {
     await _storage.write(
       key: AppConstants.accessTokenKey,
       value: loginResponse.accessToken,
@@ -201,15 +268,12 @@ class AuthService {
   Future<void> _registerDevice(String userId) async {
     try {
       final deviceInfo = await _deviceInfoService.getDeviceInfo();
-      
+
       await _dioClient.dio.post(
         '/api/devices/register',
-        data: {
-          'userId': userId,
-          ...deviceInfo.toJson(),
-        },
+        data: {'userId': userId, ...deviceInfo.toJson()},
       );
-      
+
       AppLogger.info('Device registered successfully');
     } catch (e) {
       // Don't fail login if device registration fails

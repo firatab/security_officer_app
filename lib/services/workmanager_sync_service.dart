@@ -5,8 +5,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/foundation.dart';
 import '../core/constants/app_constants.dart';
 import '../core/constants/api_endpoints.dart';
+import '../core/utils/logger.dart';
 import 'notification_dedup_service.dart';
 
 /// WorkManager callback dispatcher (MUST be top-level function)
@@ -14,15 +16,15 @@ import 'notification_dedup_service.dart';
 void callbackDispatcher() {
   Workmanager().executeTask((task, inputData) async {
     try {
-      print('🔄 Background sync task started: $task');
-      
+      AppLogger.info('🔄 Background sync task started: $task');
+
       // Perform background sync
       await _performBackgroundSync();
-      
-      print('✅ Background sync task completed');
+
+      AppLogger.info('✅ Background sync task completed');
       return Future.value(true);
     } catch (e) {
-      print('❌ Background sync task failed: $e');
+      AppLogger.error('❌ Background sync task failed: $e');
       return Future.value(false);
     }
   });
@@ -36,9 +38,9 @@ Future<void> _performBackgroundSync() async {
       aOptions: AndroidOptions(encryptedSharedPreferences: true),
     );
     final token = await storage.read(key: AppConstants.accessTokenKey);
-    
+
     if (token == null) {
-      print('Not authenticated, skipping background sync');
+      AppLogger.info('Not authenticated, skipping background sync');
       return;
     }
 
@@ -47,15 +49,17 @@ Future<void> _performBackgroundSync() async {
     final serverUrl = prefs.getString('server_api_url') ?? AppConstants.baseUrl;
 
     // Create Dio client for API calls
-    final dio = Dio(BaseOptions(
-      baseUrl: serverUrl,
-      connectTimeout: const Duration(seconds: 30),
-      receiveTimeout: const Duration(seconds: 30),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-    ));
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: serverUrl,
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ),
+    );
 
     // Initialize notifications
     final notifications = FlutterLocalNotificationsPlugin();
@@ -65,26 +69,29 @@ Future<void> _performBackgroundSync() async {
     await _checkForNewShifts(dio, prefs, notifications);
     await _checkForUpcomingCheckCalls(dio, prefs, notifications);
     await _checkForMessages(dio, prefs, notifications);
-
   } catch (e) {
-    print('Error in background sync: $e');
+    AppLogger.error('Error in background sync: $e');
   }
 }
 
 /// Initialize notification plugin
-Future<void> _initializeNotifications(FlutterLocalNotificationsPlugin notifications) async {
+Future<void> _initializeNotifications(
+  FlutterLocalNotificationsPlugin notifications,
+) async {
   const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
   const iosSettings = DarwinInitializationSettings();
   const initSettings = InitializationSettings(
     android: androidSettings,
     iOS: iosSettings,
   );
-  
+
   await notifications.initialize(initSettings);
 
   // Create notification channels
   await notifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'shift_updates',
@@ -97,7 +104,9 @@ Future<void> _initializeNotifications(FlutterLocalNotificationsPlugin notificati
       );
 
   await notifications
-      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >()
       ?.createNotificationChannel(
         const AndroidNotificationChannel(
           'check_call_reminders',
@@ -111,10 +120,16 @@ Future<void> _initializeNotifications(FlutterLocalNotificationsPlugin notificati
 }
 
 /// Check for new or updated shifts
-Future<void> _checkForNewShifts(Dio dio, SharedPreferences prefs, FlutterLocalNotificationsPlugin notifications) async {
+Future<void> _checkForNewShifts(
+  Dio dio,
+  SharedPreferences prefs,
+  FlutterLocalNotificationsPlugin notifications,
+) async {
   try {
     final lastCheck = prefs.getString('bg_last_shift_check');
-    final since = lastCheck ?? DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
+    final since =
+        lastCheck ??
+        DateTime.now().subtract(const Duration(hours: 24)).toIso8601String();
 
     final response = await dio.get(
       ApiEndpoints.shifts,
@@ -148,15 +163,22 @@ Future<void> _checkForNewShifts(Dio dio, SharedPreferences prefs, FlutterLocalNo
       }
 
       await prefs.setStringList('bg_known_shift_ids', lastShiftIds);
-      await prefs.setString('bg_last_shift_check', DateTime.now().toIso8601String());
+      await prefs.setString(
+        'bg_last_shift_check',
+        DateTime.now().toIso8601String(),
+      );
     }
   } catch (e) {
-    print('Error checking shifts: $e');
+    AppLogger.error('Error checking shifts: $e');
   }
 }
 
 /// Check for upcoming check calls
-Future<void> _checkForUpcomingCheckCalls(Dio dio, SharedPreferences prefs, FlutterLocalNotificationsPlugin notifications) async {
+Future<void> _checkForUpcomingCheckCalls(
+  Dio dio,
+  SharedPreferences prefs,
+  FlutterLocalNotificationsPlugin notifications,
+) async {
   try {
     final response = await dio.get(
       '/api/check-calls/upcoming',
@@ -169,11 +191,15 @@ Future<void> _checkForUpcomingCheckCalls(Dio dio, SharedPreferences prefs, Flutt
 
       for (final checkCall in checkCalls) {
         final callId = checkCall['id'] as String;
-        final scheduledTime = DateTime.parse(checkCall['scheduledTime'] as String);
+        final scheduledTime = DateTime.parse(
+          checkCall['scheduledTime'] as String,
+        );
         final minutesUntil = scheduledTime.difference(DateTime.now()).inMinutes;
 
         // Notify 10 minutes before check call (only once)
-        if (minutesUntil <= 10 && minutesUntil > 0 && !notifiedCalls.contains(callId)) {
+        if (minutesUntil <= 10 &&
+            minutesUntil > 0 &&
+            !notifiedCalls.contains(callId)) {
           await _showNotification(
             notifications,
             'Check Call in $minutesUntil minutes ⏰',
@@ -187,15 +213,21 @@ Future<void> _checkForUpcomingCheckCalls(Dio dio, SharedPreferences prefs, Flutt
       }
     }
   } catch (e) {
-    print('Error checking check calls: $e');
+    AppLogger.error('Error checking check calls: $e');
   }
 }
 
 /// Check for new messages/notifications
-Future<void> _checkForMessages(Dio dio, SharedPreferences prefs, FlutterLocalNotificationsPlugin notifications) async {
+Future<void> _checkForMessages(
+  Dio dio,
+  SharedPreferences prefs,
+  FlutterLocalNotificationsPlugin notifications,
+) async {
   try {
     final lastCheck = prefs.getString('bg_last_message_check');
-    final since = lastCheck ?? DateTime.now().subtract(const Duration(hours: 1)).toIso8601String();
+    final since =
+        lastCheck ??
+        DateTime.now().subtract(const Duration(hours: 1)).toIso8601String();
 
     final response = await dio.get(
       ApiEndpoints.mobileNotifications,
@@ -204,16 +236,17 @@ Future<void> _checkForMessages(Dio dio, SharedPreferences prefs, FlutterLocalNot
 
     if (response.statusCode == 200 && response.data['data'] != null) {
       final messages = response.data['data'] as List;
-      final notifiedMessages = prefs.getStringList('bg_notified_messages') ?? [];
+      final notifiedMessages =
+          prefs.getStringList('bg_notified_messages') ?? [];
 
       for (final message in messages) {
         final messageId = message['id'] as String;
-        
+
         // Only show if not already notified
         if (!notifiedMessages.contains(messageId)) {
           final title = message['title'] ?? 'New Message';
           final body = message['message'] ?? '';
-          
+
           await _showNotification(
             notifications,
             title,
@@ -226,10 +259,13 @@ Future<void> _checkForMessages(Dio dio, SharedPreferences prefs, FlutterLocalNot
       }
 
       await prefs.setStringList('bg_notified_messages', notifiedMessages);
-      await prefs.setString('bg_last_message_check', DateTime.now().toIso8601String());
+      await prefs.setString(
+        'bg_last_message_check',
+        DateTime.now().toIso8601String(),
+      );
     }
   } catch (e) {
-    print('Error checking messages: $e');
+    AppLogger.error('Error checking messages: $e');
   }
 }
 
@@ -243,20 +279,24 @@ Future<void> _showNotification(
 ) async {
   // Check for duplicate
   // Use abstract hash as ID if no specific ID tracked by caller
-  final dedupId = '$id:${title.hashCode}:${body.hashCode}'; 
+  final dedupId = '$id:${title.hashCode}:${body.hashCode}';
   final dedupService = NotificationDedupService();
   final shouldShow = await dedupService.shouldShowNotification(dedupId);
-  
+
   if (!shouldShow) {
-    print('📱 [Background] Skipping duplicate notification: $title');
+    AppLogger.info('📱 [Background] Skipping duplicate notification: $title');
     return;
   }
 
   final androidDetails = AndroidNotificationDetails(
     channelId,
     channelId == 'shift_updates' ? 'Shift Updates' : 'Check Call Reminders',
-    importance: channelId == 'check_call_reminders' ? Importance.max : Importance.high,
-    priority: channelId == 'check_call_reminders' ? Priority.max : Priority.high,
+    importance: channelId == 'check_call_reminders'
+        ? Importance.max
+        : Importance.high,
+    priority: channelId == 'check_call_reminders'
+        ? Priority.max
+        : Priority.high,
     playSound: true,
     enableVibration: true,
   );
@@ -267,13 +307,10 @@ Future<void> _showNotification(
     presentSound: true,
   );
 
-  final details = NotificationDetails(
-    android: androidDetails,
-    iOS: iosDetails,
-  );
+  final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
 
   await notifications.show(id, title, body, details);
-  print('📱 Showed notification: $title');
+  AppLogger.info('📱 Showed notification: $title');
 }
 
 /// Format date and time for display
@@ -293,7 +330,8 @@ class BackgroundSyncService {
   // Android minimum is 15 minutes for periodic tasks
   static const Duration syncInterval = Duration(minutes: 15);
 
-  static final BackgroundSyncService _instance = BackgroundSyncService._internal();
+  static final BackgroundSyncService _instance =
+      BackgroundSyncService._internal();
   factory BackgroundSyncService() => _instance;
   BackgroundSyncService._internal();
 
@@ -302,16 +340,13 @@ class BackgroundSyncService {
     try {
       // IMPORTANT: Must call DartPluginRegistrant for background isolates
       DartPluginRegistrant.ensureInitialized();
-      
-      await Workmanager().initialize(
-        callbackDispatcher,
-        isInDebugMode: true, // Set to false in production
-      );
-      
+
+      await Workmanager().initialize(callbackDispatcher);
+
       await registerPeriodicTask();
-      print('🔄 WorkManager background sync service initialized');
+      AppLogger.info('🔄 WorkManager background sync service initialized');
     } catch (e) {
-      print('Failed to initialize WorkManager: $e');
+      AppLogger.error('Failed to initialize WorkManager: $e');
     }
   }
 
@@ -328,9 +363,11 @@ class BackgroundSyncService {
         existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
         initialDelay: const Duration(minutes: 1), // First run after 1 minute
       );
-      print('📅 Periodic background sync registered (every 15 minutes)');
+      AppLogger.info(
+        '📅 Periodic background sync registered (every 15 minutes)',
+      );
     } catch (e) {
-      print('Failed to register periodic task: $e');
+      AppLogger.error('Failed to register periodic task: $e');
     }
   }
 
@@ -338,9 +375,9 @@ class BackgroundSyncService {
   Future<void> cancel() async {
     try {
       await Workmanager().cancelByUniqueName(uniqueName);
-      print('❌ Background sync cancelled');
+      AppLogger.info('❌ Background sync cancelled');
     } catch (e) {
-      print('Failed to cancel background sync: $e');
+      AppLogger.error('Failed to cancel background sync: $e');
     }
   }
 }

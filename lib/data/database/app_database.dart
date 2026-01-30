@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
@@ -5,6 +6,7 @@ import 'package:drift_flutter/drift_flutter.dart';
 import 'tables.dart';
 
 // DAO part files
+part 'daos/tenant_config_dao.dart';
 part 'daos/shifts_dao.dart';
 part 'daos/attendances_dao.dart';
 part 'daos/location_logs_dao.dart';
@@ -14,10 +16,16 @@ part 'daos/incident_reports_dao.dart';
 part 'daos/patrols_dao.dart';
 part 'daos/patrol_tours_dao.dart';
 part 'daos/patrol_instances_dao.dart';
+part 'daos/outbox_dao.dart';
+part 'daos/in_app_notifications_dao.dart';
 part 'app_database.g.dart';
 
 @DriftDatabase(
   tables: [
+    // Tenant & App Configuration
+    TenantConfig,
+    AppConfig,
+    // Core tables
     Shifts,
     Attendances,
     LocationLogs,
@@ -33,8 +41,14 @@ part 'app_database.g.dart';
     PatrolInstances,
     PatrolPointCompletions,
     PatrolTaskResponses,
+    // Outbox tables
+    OutboxEvents,
+    SyncState,
+    // Notifications
+    InAppNotifications,
   ],
   daos: [
+    TenantConfigDao,
     ShiftsDao,
     AttendancesDao,
     LocationLogsDao,
@@ -44,6 +58,8 @@ part 'app_database.g.dart';
     PatrolsDao,
     PatrolToursDao,
     PatrolInstancesDao,
+    OutboxDao,
+    InAppNotificationsDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -53,6 +69,8 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   // Override DAO instances (generated in _$AppDatabase)
+  @override
+  late final TenantConfigDao tenantConfigDao = TenantConfigDao(this);
   @override
   late final ShiftsDao shiftsDao = ShiftsDao(this);
   @override
@@ -71,9 +89,14 @@ class AppDatabase extends _$AppDatabase {
   late final PatrolToursDao patrolToursDao = PatrolToursDao(this);
   @override
   late final PatrolInstancesDao patrolInstancesDao = PatrolInstancesDao(this);
+  @override
+  late final OutboxDao outboxDao = OutboxDao(this);
+  @override
+  late final InAppNotificationsDao inAppNotificationsDao =
+      InAppNotificationsDao(this);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration {
@@ -115,6 +138,20 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(patrolPointCompletions);
           await m.createTable(patrolTaskResponses);
         }
+        if (from < 6) {
+          // Create tenant configuration tables
+          await m.createTable(tenantConfig);
+          await m.createTable(appConfig);
+        }
+        if (from < 7) {
+          // Create outbox pattern tables for reliable event publishing and incremental sync
+          await m.createTable(outboxEvents);
+          await m.createTable(syncState);
+        }
+        if (from < 8) {
+          // Create in-app notifications table
+          await m.createTable(inAppNotifications);
+        }
       },
     );
   }
@@ -130,8 +167,8 @@ class AppDatabase extends _$AppDatabase {
       locationLogsDao.getUnsyncedLocationLogs(limit: limit);
 
   // DIAGNOSTIC: Debug location sync issues
-  Future<int> countTotalLocationLogs() => locationLogsDao.countTotal();
-  Future<int> countUnsyncedLocationLogs() => locationLogsDao.countUnsynced();
+  Future<int> countTotalLocationLogs() => locationLogsDao.getTotalCount();
+  Future<int> countUnsyncedLocationLogs() => locationLogsDao.getUnsyncedCount();
   Future<List<LocationLog>> getRecentLocationLogs({int limit = 10}) =>
       locationLogsDao.getRecentLogs(limit: limit);
 
@@ -151,8 +188,7 @@ class AppDatabase extends _$AppDatabase {
   Future<List<CheckCall>> getUnsyncedCheckCalls() =>
       checkCallsDao.getUnsyncedCheckCalls();
 
-  Future<int> markCheckCallSynced(String id) =>
-      checkCallsDao.markAsSynced(id);
+  Future<int> markCheckCallSynced(String id) => checkCallsDao.markAsSynced(id);
 
   // Incident report sync methods
   Future<int> updateIncidentServerId(String localId, String serverId) =>

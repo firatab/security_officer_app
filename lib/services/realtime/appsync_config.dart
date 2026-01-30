@@ -9,7 +9,7 @@ class AppSyncConfig {
   /// Feature flag for realtime provider
   /// Values: 'socket', 'appsync', 'both'
   static const String realtimeProvider =
-      String.fromEnvironment('REALTIME_PROVIDER', defaultValue: 'socket');
+      String.fromEnvironment('REALTIME_PROVIDER', defaultValue: 'appsync');
 
   /// Check if AppSync is enabled
   static bool get isAppSyncEnabled =>

@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../core/constants/app_constants.dart';
 import '../core/utils/logger.dart';
+import '../data/database/app_database.dart';
 
 /// WebSocket connection state
 enum WebSocketConnectionState {
@@ -45,9 +46,12 @@ class SocketEvent {
   static const String checkCallCreated = 'check_call:created';
   static const String checkCallMissed = 'check_call:missed';
   static const String checkCallAlert = 'check_call:alert';
-  static const String checkCallAlarm = 'check_call_alarm';  // Alarm when check call is due
-  static const String checkCallUpcoming = 'check_call_upcoming';  // Advance notice
-  static const String checkCallDue = 'check_call_due';  // Push notification event
+  static const String checkCallAlarm =
+      'check_call_alarm'; // Alarm when check call is due
+  static const String checkCallUpcoming =
+      'check_call_upcoming'; // Advance notice
+  static const String checkCallDue =
+      'check_call_due'; // Push notification event
 
   // Incident events
   static const String incidentCreated = 'incident:created';
@@ -113,10 +117,10 @@ class WebSocketMessage {
   }
 
   Map<String, dynamic> toJson() => {
-        'type': type,
-        'data': data,
-        'timestamp': timestamp.toIso8601String(),
-      };
+    'type': type,
+    'data': data,
+    'timestamp': timestamp.toIso8601String(),
+  };
 }
 
 /// WebSocket state
@@ -164,21 +168,32 @@ class WebSocketController extends StateNotifier<WebSocketState> {
   Stream<WebSocketMessage> get messageStream => _messageController.stream;
 
   // Event-specific stream controllers
-  final _shiftUpdateController = StreamController<Map<String, dynamic>>.broadcast();
-  final _checkCallController = StreamController<Map<String, dynamic>>.broadcast();
-  final _incidentController = StreamController<Map<String, dynamic>>.broadcast();
-  final _panicAlertController = StreamController<Map<String, dynamic>>.broadcast();
-  final _notificationController = StreamController<Map<String, dynamic>>.broadcast();
+  final _shiftUpdateController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _checkCallController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _incidentController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _panicAlertController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final _notificationController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
-  Stream<Map<String, dynamic>> get shiftUpdates => _shiftUpdateController.stream;
-  Stream<Map<String, dynamic>> get checkCallUpdates => _checkCallController.stream;
-  Stream<Map<String, dynamic>> get incidentUpdates => _incidentController.stream;
+  Stream<Map<String, dynamic>> get shiftUpdates =>
+      _shiftUpdateController.stream;
+  Stream<Map<String, dynamic>> get checkCallUpdates =>
+      _checkCallController.stream;
+  Stream<Map<String, dynamic>> get incidentUpdates =>
+      _incidentController.stream;
   Stream<Map<String, dynamic>> get panicAlerts => _panicAlertController.stream;
-  Stream<Map<String, dynamic>> get notifications => _notificationController.stream;
+  Stream<Map<String, dynamic>> get notifications =>
+      _notificationController.stream;
 
   // Alias getters for PushNotificationService compatibility
-  Stream<Map<String, dynamic>> get notificationStream => _notificationController.stream;
-  Stream<Map<String, dynamic>> get checkCallStream => _checkCallController.stream;
+  Stream<Map<String, dynamic>> get notificationStream =>
+      _notificationController.stream;
+  Stream<Map<String, dynamic>> get checkCallStream =>
+      _checkCallController.stream;
   Stream<Map<String, dynamic>> get incidentStream => _incidentController.stream;
   Stream<Map<String, dynamic>> get panicStream => _panicAlertController.stream;
 
@@ -220,8 +235,8 @@ class WebSocketController extends StateNotifier<WebSocketState> {
     };
   }
 
-  /// Connect to Socket.IO server
-  Future<void> connect() async {
+  /// Connect to Socket.IO server using tenant-specific wsBaseUrl
+  Future<void> connect({AppDatabase? database}) async {
     // Check if WebSocket is enabled
     if (!AppConstants.enableWebSocket) {
       AppLogger.info('WebSocket disabled - using HTTP polling instead');
@@ -252,12 +267,28 @@ class WebSocketController extends StateNotifier<WebSocketState> {
         throw Exception('Not authenticated');
       }
 
+      // Get tenant-specific WebSocket URL from TenantConfig
+      String wsUrl;
+      if (database != null) {
+        final activeTenant = await database.tenantConfigDao.getActiveTenant();
+        if (activeTenant != null && activeTenant.wsBaseUrl.isNotEmpty) {
+          wsUrl = activeTenant.wsBaseUrl;
+          AppLogger.info('Using tenant-specific WebSocket URL: $wsUrl');
+        } else {
+          // Fallback to default if tenant config not available
+          wsUrl = AppConstants.wsUrl;
+          AppLogger.warning('No tenant wsBaseUrl found, using default: $wsUrl');
+        }
+      } else {
+        wsUrl = AppConstants.wsUrl;
+        AppLogger.info('Database not provided, using default wsUrl: $wsUrl');
+      }
+
       // Get device info
       final deviceInfo = await _getDeviceInfo();
       final deviceId = await _getOrCreateDeviceId();
 
       // Build Socket.IO URL (should point to /api/socket path)
-      final wsUrl = AppConstants.wsUrl;
       AppLogger.info('Connecting to Socket.IO: $wsUrl');
 
       // Create Socket.IO connection
@@ -273,6 +304,7 @@ class WebSocketController extends StateNotifier<WebSocketState> {
               'deviceModel': deviceInfo['deviceModel'],
               'osVersion': deviceInfo['osVersion'],
               'appVersion': deviceInfo['appVersion'],
+              'tenantId': _tenantId, // Add tenantId to auth
             })
             .enableAutoConnect()
             .enableReconnection()
@@ -377,41 +409,148 @@ class WebSocketController extends StateNotifier<WebSocketState> {
       if (data is Map<String, dynamic> && data['token'] != null) {
         AppLogger.info('Token refreshed via socket');
         _currentToken = data['token'];
-        await _storage.write(key: AppConstants.accessTokenKey, value: data['token']);
+        await _storage.write(
+          key: AppConstants.accessTokenKey,
+          value: data['token'],
+        );
       }
     });
 
     // Shift events
-    _socket!.on(SocketEvent.shiftCreated, (data) => _handleEvent(SocketEvent.shiftCreated, data, _shiftUpdateController));
-    _socket!.on(SocketEvent.shiftUpdated, (data) => _handleEvent(SocketEvent.shiftUpdated, data, _shiftUpdateController));
-    _socket!.on(SocketEvent.shiftDeleted, (data) => _handleEvent(SocketEvent.shiftDeleted, data, _shiftUpdateController));
+    _socket!.on(
+      SocketEvent.shiftCreated,
+      (data) =>
+          _handleEvent(SocketEvent.shiftCreated, data, _shiftUpdateController),
+    );
+    _socket!.on(
+      SocketEvent.shiftUpdated,
+      (data) =>
+          _handleEvent(SocketEvent.shiftUpdated, data, _shiftUpdateController),
+    );
+    _socket!.on(
+      SocketEvent.shiftDeleted,
+      (data) =>
+          _handleEvent(SocketEvent.shiftDeleted, data, _shiftUpdateController),
+    );
 
     // Attendance events
-    _socket!.on(SocketEvent.attendanceBookOn, (data) => _handleEvent(SocketEvent.attendanceBookOn, data, _shiftUpdateController));
-    _socket!.on(SocketEvent.attendanceBookOff, (data) => _handleEvent(SocketEvent.attendanceBookOff, data, _shiftUpdateController));
-    _socket!.on(SocketEvent.attendanceUpdated, (data) => _handleEvent(SocketEvent.attendanceUpdated, data, _shiftUpdateController));
+    _socket!.on(
+      SocketEvent.attendanceBookOn,
+      (data) => _handleEvent(
+        SocketEvent.attendanceBookOn,
+        data,
+        _shiftUpdateController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.attendanceBookOff,
+      (data) => _handleEvent(
+        SocketEvent.attendanceBookOff,
+        data,
+        _shiftUpdateController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.attendanceUpdated,
+      (data) => _handleEvent(
+        SocketEvent.attendanceUpdated,
+        data,
+        _shiftUpdateController,
+      ),
+    );
 
     // Check call events
-    _socket!.on(SocketEvent.checkCallCreated, (data) => _handleEvent(SocketEvent.checkCallCreated, data, _checkCallController));
-    _socket!.on(SocketEvent.checkCallMissed, (data) => _handleEvent(SocketEvent.checkCallMissed, data, _checkCallController));
-    _socket!.on(SocketEvent.checkCallAlert, (data) => _handleEvent(SocketEvent.checkCallAlert, data, _checkCallController));
-    _socket!.on(SocketEvent.checkCallAlarm, (data) => _handleEvent(SocketEvent.checkCallAlarm, data, _checkCallController));
-    _socket!.on(SocketEvent.checkCallUpcoming, (data) => _handleEvent(SocketEvent.checkCallUpcoming, data, _checkCallController));
-    _socket!.on(SocketEvent.checkCallDue, (data) => _handleEvent(SocketEvent.checkCallDue, data, _checkCallController));
+    _socket!.on(
+      SocketEvent.checkCallCreated,
+      (data) => _handleEvent(
+        SocketEvent.checkCallCreated,
+        data,
+        _checkCallController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.checkCallMissed,
+      (data) =>
+          _handleEvent(SocketEvent.checkCallMissed, data, _checkCallController),
+    );
+    _socket!.on(
+      SocketEvent.checkCallAlert,
+      (data) =>
+          _handleEvent(SocketEvent.checkCallAlert, data, _checkCallController),
+    );
+    _socket!.on(
+      SocketEvent.checkCallAlarm,
+      (data) =>
+          _handleEvent(SocketEvent.checkCallAlarm, data, _checkCallController),
+    );
+    _socket!.on(
+      SocketEvent.checkCallUpcoming,
+      (data) => _handleEvent(
+        SocketEvent.checkCallUpcoming,
+        data,
+        _checkCallController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.checkCallDue,
+      (data) =>
+          _handleEvent(SocketEvent.checkCallDue, data, _checkCallController),
+    );
 
     // Incident events
-    _socket!.on(SocketEvent.incidentCreated, (data) => _handleEvent(SocketEvent.incidentCreated, data, _incidentController));
-    _socket!.on(SocketEvent.incidentUpdated, (data) => _handleEvent(SocketEvent.incidentUpdated, data, _incidentController));
-    _socket!.on(SocketEvent.incidentDeleted, (data) => _handleEvent(SocketEvent.incidentDeleted, data, _incidentController));
+    _socket!.on(
+      SocketEvent.incidentCreated,
+      (data) =>
+          _handleEvent(SocketEvent.incidentCreated, data, _incidentController),
+    );
+    _socket!.on(
+      SocketEvent.incidentUpdated,
+      (data) =>
+          _handleEvent(SocketEvent.incidentUpdated, data, _incidentController),
+    );
+    _socket!.on(
+      SocketEvent.incidentDeleted,
+      (data) =>
+          _handleEvent(SocketEvent.incidentDeleted, data, _incidentController),
+    );
 
     // Panic alerts (critical)
-    _socket!.on(SocketEvent.panicAlert, (data) => _handleEvent(SocketEvent.panicAlert, data, _panicAlertController));
-    _socket!.on(SocketEvent.panicAcknowledged, (data) => _handleEvent(SocketEvent.panicAcknowledged, data, _panicAlertController));
-    _socket!.on(SocketEvent.panicResolved, (data) => _handleEvent(SocketEvent.panicResolved, data, _panicAlertController));
+    _socket!.on(
+      SocketEvent.panicAlert,
+      (data) =>
+          _handleEvent(SocketEvent.panicAlert, data, _panicAlertController),
+    );
+    _socket!.on(
+      SocketEvent.panicAcknowledged,
+      (data) => _handleEvent(
+        SocketEvent.panicAcknowledged,
+        data,
+        _panicAlertController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.panicResolved,
+      (data) =>
+          _handleEvent(SocketEvent.panicResolved, data, _panicAlertController),
+    );
 
     // Notifications
-    _socket!.on(SocketEvent.notificationNew, (data) => _handleEvent(SocketEvent.notificationNew, data, _notificationController));
-    _socket!.on(SocketEvent.pushNotification, (data) => _handleEvent(SocketEvent.pushNotification, data, _notificationController));
+    _socket!.on(
+      SocketEvent.notificationNew,
+      (data) => _handleEvent(
+        SocketEvent.notificationNew,
+        data,
+        _notificationController,
+      ),
+    );
+    _socket!.on(
+      SocketEvent.pushNotification,
+      (data) => _handleEvent(
+        SocketEvent.pushNotification,
+        data,
+        _notificationController,
+      ),
+    );
 
     // Ping/Pong for connection health
     _socket!.on('pong', (data) {
@@ -420,7 +559,11 @@ class WebSocketController extends StateNotifier<WebSocketState> {
   }
 
   /// Handle incoming events and broadcast to appropriate streams
-  void _handleEvent(String eventType, dynamic data, StreamController<Map<String, dynamic>> controller) {
+  void _handleEvent(
+    String eventType,
+    dynamic data,
+    StreamController<Map<String, dynamic>> controller,
+  ) {
     try {
       AppLogger.debug('Socket event received: $eventType');
 
@@ -436,10 +579,9 @@ class WebSocketController extends StateNotifier<WebSocketState> {
       controller.add(eventData);
 
       // Also broadcast to general message stream
-      _messageController.add(WebSocketMessage(
-        type: eventType,
-        data: eventData,
-      ));
+      _messageController.add(
+        WebSocketMessage(type: eventType, data: eventData),
+      );
     } catch (e) {
       AppLogger.error('Error handling socket event $eventType', e);
     }
@@ -488,7 +630,11 @@ class WebSocketController extends StateNotifier<WebSocketState> {
   }
 
   /// Send check call response
-  void sendCheckCallResponse(String checkCallId, String status, {String? notes}) {
+  void sendCheckCallResponse(
+    String checkCallId,
+    String status, {
+    String? notes,
+  }) {
     emit('check_call:respond', {
       'checkCallId': checkCallId,
       'status': status,
@@ -499,27 +645,20 @@ class WebSocketController extends StateNotifier<WebSocketState> {
 
   /// Register push notification token
   Future<void> registerPushToken(String token, String platform) async {
-    emit(SocketEvent.pushRegister, {
-      'token': token,
-      'platform': platform,
-    });
+    emit(SocketEvent.pushRegister, {'token': token, 'platform': platform});
   }
 
   /// Sync offline queue
   Future<void> syncOfflineQueue(List<Map<String, dynamic>> queue) async {
     if (queue.isEmpty) return;
 
-    emit(SocketEvent.offlineSync, {
-      'queue': queue,
-    });
+    emit(SocketEvent.offlineSync, {'queue': queue});
   }
 
   /// Request token refresh
   void requestTokenRefresh() {
     if (_currentToken != null) {
-      emit(SocketEvent.tokenRefresh, {
-        'token': _currentToken,
-      });
+      emit(SocketEvent.tokenRefresh, {'token': _currentToken});
     }
   }
 
@@ -533,7 +672,9 @@ class WebSocketController extends StateNotifier<WebSocketState> {
     if (_socket != null) {
       _socket!.disconnect();
       _socket!.connect();
-      state = state.copyWith(connectionState: WebSocketConnectionState.reconnecting);
+      state = state.copyWith(
+        connectionState: WebSocketConnectionState.reconnecting,
+      );
     } else {
       connect();
     }
@@ -554,6 +695,7 @@ class WebSocketController extends StateNotifier<WebSocketState> {
 }
 
 /// Provider for WebSocket service
-final webSocketProvider = StateNotifierProvider<WebSocketController, WebSocketState>((ref) {
-  return WebSocketController();
-});
+final webSocketProvider =
+    StateNotifierProvider<WebSocketController, WebSocketState>((ref) {
+      return WebSocketController();
+    });

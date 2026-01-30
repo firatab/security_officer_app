@@ -14,9 +14,18 @@ import '../incident/incident_report_screen.dart';
 import '../map/map_screen.dart';
 import '../patrol/patrol_list_screen.dart';
 import '../shifts/shifts_screen.dart';
+import '../notifications/notification_center_screen.dart';
 
-final userInfoProvider = FutureProvider.autoDispose<Map<String, String?>>((ref) {
+final userInfoProvider = FutureProvider.autoDispose<Map<String, String?>>((
+  ref,
+) {
   return ref.watch(authServiceProvider).getCurrentUserInfo();
+});
+
+/// Provider for unread notification count badge
+final unreadNotificationCountProvider = StreamProvider<int>((ref) {
+  final database = ref.watch(databaseProvider);
+  return database.inAppNotificationsDao.watchUnreadCount();
 });
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -173,10 +182,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('ACKNOWLEDGE', style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'ACKNOWLEDGE',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildNotificationIconWithBadge() {
+    return Consumer(
+      builder: (context, ref, child) {
+        final unreadCount =
+            ref.watch(unreadNotificationCountProvider).value ?? 0;
+
+        return Stack(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.notifications),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationCenterScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Notifications',
+            ),
+            if (unreadCount > 0)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 16,
+                    minHeight: 16,
+                  ),
+                  child: Text(
+                    '$unreadCount',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -195,6 +258,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             padding: EdgeInsets.only(right: 8),
             child: ConnectionStatusIndicator(),
           ),
+          _buildNotificationIconWithBadge(),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _handleLogout(),
@@ -209,7 +273,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: userInfo.when(
               data: (user) => _buildContent(user, theme),
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) => Center(child: Text('Error loading user data: $e')),
+              error: (e, s) =>
+                  Center(child: Text('Error loading user data: $e')),
             ),
           ),
         ],
@@ -228,7 +293,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PanicButton(onPressed: () => _handlePanic(shiftId, siteId), isSending: false),
+          PanicButton(
+            onPressed: () => _handlePanic(shiftId, siteId),
+            isSending: false,
+          ),
           const SizedBox(height: 16),
           TrackingStatusCard(employeeId: employeeId, tenantId: tenantId),
           const SizedBox(height: 16),
@@ -238,21 +306,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Card _buildQuickActions(BuildContext context, ThemeData theme, String? shiftId, String? siteId) {
+  Card _buildQuickActions(
+    BuildContext context,
+    ThemeData theme,
+    String? shiftId,
+    String? siteId,
+  ) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Quick Actions', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              'Quick Actions',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
             const SizedBox(height: 16),
             _quickActionButton(
               context,
               icon: Icons.schedule,
               label: 'View My Shifts',
               color: theme.colorScheme.primary,
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ShiftsScreen())),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ShiftsScreen()),
+              ),
             ),
             const SizedBox(height: 12),
             _quickActionButton(
@@ -261,7 +342,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               label: 'Create Incident Report',
               color: Colors.orange,
               onPressed: shiftId != null
-                  ? () => Navigator.push(context, MaterialPageRoute(builder: (context) => IncidentReportScreen(shiftId: shiftId)))
+                  ? () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            IncidentReportScreen(shiftId: shiftId),
+                      ),
+                    )
                   : null, // Disable if no active shift
             ),
             const SizedBox(height: 12),
@@ -271,7 +358,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               label: 'Start Patrol',
               color: Colors.blue.shade800,
               onPressed: siteId != null
-                  ? () => Navigator.push(context, MaterialPageRoute(builder: (context) => PatrolListScreen(siteId: siteId)))
+                  ? () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PatrolListScreen(siteId: siteId),
+                      ),
+                    )
                   : null, // Disable if no active site
             ),
             const SizedBox(height: 12),
@@ -280,7 +372,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: Icons.map,
               label: 'View Site Map',
               color: Colors.green,
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const MapScreen())),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const MapScreen()),
+              ),
             ),
             const SizedBox(height: 12),
             // Manual sync button for location data
@@ -289,25 +384,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final offlineState = ref.watch(offlineManagerProvider);
                 return _quickActionButton(
                   context,
-                  icon: offlineState.isSyncing ? Icons.sync : Icons.cloud_upload,
-                  label: offlineState.isSyncing 
-                      ? 'Syncing...' 
+                  icon: offlineState.isSyncing
+                      ? Icons.sync
+                      : Icons.cloud_upload,
+                  label: offlineState.isSyncing
+                      ? 'Syncing...'
                       : offlineState.lastSyncTime != null
-                          ? 'Sync Data (${_formatLastSync(offlineState.lastSyncTime!)})'
-                          : 'Sync Data Now',
+                      ? 'Sync Data (${_formatLastSync(offlineState.lastSyncTime!)})'
+                      : 'Sync Data Now',
                   color: offlineState.isSyncing ? Colors.grey : Colors.purple,
                   onPressed: offlineState.isSyncing
                       ? null
                       : () async {
-                          final manager = ref.read(offlineManagerProvider.notifier);
+                          final manager = ref.read(
+                            offlineManagerProvider.notifier,
+                          );
                           final success = await manager.syncNow();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(success
-                                    ? '✅ Sync completed successfully'
-                                    : '❌ Sync failed. Check your connection.'),
-                                backgroundColor: success ? Colors.green : Colors.red,
+                                content: Text(
+                                  success
+                                      ? '✅ Sync completed successfully'
+                                      : '❌ Sync failed. Check your connection.',
+                                ),
+                                backgroundColor: success
+                                    ? Colors.green
+                                    : Colors.red,
                               ),
                             );
                           }
@@ -324,7 +427,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String _formatLastSync(DateTime lastSync) {
     final now = DateTime.now();
     final difference = now.difference(lastSync);
-    
+
     if (difference.inSeconds < 60) {
       return '${difference.inSeconds}s ago';
     } else if (difference.inMinutes < 60) {
@@ -334,7 +437,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Widget _quickActionButton(BuildContext context, {required IconData icon, required String label, required Color color, required VoidCallback? onPressed}) {
+  Widget _quickActionButton(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback? onPressed,
+  }) {
     return ElevatedButton.icon(
       onPressed: onPressed,
       icon: Icon(icon),
@@ -356,8 +465,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Logout')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
         ],
       ),
     );
@@ -387,7 +502,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       AppLogger.error('Logout failed', e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Logout failed: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Logout failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
@@ -395,23 +513,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _handlePanic(String? shiftId, String? siteId) async {
     // Check if we have either shiftId or siteId (required by backend)
     if (shiftId == null && siteId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must be on an active shift to send a panic alert'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'You must be on an active shift to send a panic alert',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
       return;
     }
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Panic Alert', style: TextStyle(color: Colors.red)),
-        content: const Text('Are you sure you want to send a panic alert? This will immediately notify your supervisor.'),
+        title: const Text(
+          'Confirm Panic Alert',
+          style: TextStyle(color: Colors.red),
+        ),
+        content: const Text(
+          'Are you sure you want to send a panic alert? This will immediately notify your supervisor.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('SEND ALERT', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'SEND ALERT',
+              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+            ),
+          ),
         ],
       ),
     );
@@ -433,13 +569,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Panic alert sent successfully!'), backgroundColor: Colors.green),
+        const SnackBar(
+          content: Text('Panic alert sent successfully!'),
+          backgroundColor: Colors.green,
+        ),
       );
     } catch (e) {
       AppLogger.error('Panic alert failed', e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send panic alert: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Failed to send panic alert: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }

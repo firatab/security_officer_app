@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:security_officer_app/presentation/screens/home/home_screen.dart';
 import 'core/constants/app_constants.dart';
 import 'core/network/dio_client.dart';
@@ -18,6 +20,7 @@ import 'data/repositories/patrol_repository.dart';
 import 'data/repositories/patrol_tour_repository.dart';
 import 'data/repositories/shift_repository.dart';
 import 'presentation/screens/auth/login_screen.dart';
+import 'presentation/screens/auth/tenant_setup_screen.dart';
 import 'presentation/screens/permissions/permissions_screen.dart';
 import 'services/auth_service.dart';
 import 'services/background_location_service.dart';
@@ -26,6 +29,7 @@ import 'services/check_call_service.dart';
 import 'services/location_service.dart';
 import 'services/location_tracking_controller.dart';
 import 'services/notification_service.dart';
+import 'presentation/screens/check_call/check_call_alarm_screen.dart';
 import 'services/offline_manager.dart';
 import 'services/permission_service.dart';
 import 'services/polling_service.dart';
@@ -37,65 +41,100 @@ import 'services/timezone_service.dart';
 import 'services/websocket_event_handler.dart';
 import 'services/websocket_service.dart';
 import 'services/workmanager_sync_service.dart';
+import 'services/location_batch_manager.dart';
 import 'firebase_options.dart';
 
 // Core Providers
-final serverConfigProvider = Provider<ServerConfigService>((ref) => throw UnimplementedError());
+final serverConfigProvider = Provider<ServerConfigService>(
+  (ref) => throw UnimplementedError(),
+);
+final dioClientProvider = Provider<DioClient>(
+  (ref) => throw UnimplementedError(),
+);
 final databaseProvider = Provider<AppDatabase>((ref) => AppDatabase());
 
 // Repository Providers
 final shiftRepositoryProvider = Provider<ShiftRepository>(
-  (ref) => ShiftRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => ShiftRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 final attendanceRepositoryProvider = Provider<AttendanceRepository>(
-  (ref) => AttendanceRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => AttendanceRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 final checkCallRepositoryProvider = Provider<CheckCallRepository>(
-  (ref) => CheckCallRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => CheckCallRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 final incidentReportRepositoryProvider = Provider<IncidentReportRepository>(
-  (ref) => IncidentReportRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => IncidentReportRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 final emergencyRepositoryProvider = Provider<EmergencyRepository>(
   (ref) => EmergencyRepository(ref.watch(dioClientProvider)),
 );
 final patrolRepositoryProvider = Provider<PatrolRepository>(
-  (ref) => PatrolRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => PatrolRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 final patrolTourRepositoryProvider = Provider<PatrolTourRepository>(
-  (ref) => PatrolTourRepository(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) => PatrolTourRepository(
+    ref.watch(dioClientProvider),
+    ref.watch(databaseProvider),
+  ),
 );
 
 // Service Providers
 final authServiceProvider = Provider<AuthService>(
-  (ref) => AuthService(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) =>
+      AuthService(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
 );
-final locationServiceProvider = Provider<LocationService>((ref) => LocationService());
+final locationServiceProvider = Provider<LocationService>(
+  (ref) => LocationService(),
+);
 final syncServiceProvider = Provider<SyncService>(
-  (ref) => SyncService(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
+  (ref) =>
+      SyncService(ref.watch(dioClientProvider), ref.watch(databaseProvider)),
 );
 final backgroundLocationServiceProvider = Provider<BackgroundLocationService>(
   (ref) => BackgroundLocationService(),
 );
-final locationTrackingProvider = StateNotifierProvider<LocationTrackingController, LocationTrackingState>(
-  (ref) => LocationTrackingController(
-    ref.watch(backgroundLocationServiceProvider),
-    ref.watch(locationServiceProvider),
-  ),
+final locationTrackingProvider =
+    StateNotifierProvider<LocationTrackingController, LocationTrackingState>(
+      (ref) => LocationTrackingController(
+        ref.watch(backgroundLocationServiceProvider),
+        ref.watch(locationServiceProvider),
+        ref.watch(locationBatchManagerProvider),
+      ),
+    );
+final notificationServiceProvider = Provider<NotificationService>(
+  (ref) => throw UnimplementedError(),
 );
-final notificationServiceProvider = Provider<NotificationService>((ref) => throw UnimplementedError());
 
 // Timezone Service Provider
-final timezoneServiceProvider = Provider<TimezoneService>((ref) => throw UnimplementedError());
+final timezoneServiceProvider = Provider<TimezoneService>(
+  (ref) => throw UnimplementedError(),
+);
 
 // Controller Providers
-final checkCallControllerProvider = StateNotifierProvider<CheckCallController, CheckCallState>(
-  (ref) => CheckCallController(
-    ref.watch(checkCallRepositoryProvider),
-    ref.watch(locationServiceProvider),
-    ref.watch(notificationServiceProvider),
-  ),
-);
+final checkCallControllerProvider =
+    StateNotifierProvider<CheckCallController, CheckCallState>(
+      (ref) => CheckCallController(
+        ref.watch(checkCallRepositoryProvider),
+        ref.watch(locationServiceProvider),
+        ref.watch(notificationServiceProvider),
+      ),
+    );
 
 // WebSocket Providers
 final webSocketEventHandlerProvider = Provider<WebSocketEventHandler>(
@@ -108,27 +147,33 @@ final webSocketEventHandlerProvider = Provider<WebSocketEventHandler>(
   ),
 );
 
-final realtimeDataManagerProvider = StateNotifierProvider<RealtimeDataManager, RealtimeDataState>(
-  (ref) => RealtimeDataManager(
-    wsController: ref.watch(webSocketProvider.notifier),
-    database: ref.watch(databaseProvider),
-    shiftRepository: ref.watch(shiftRepositoryProvider),
-    checkCallRepository: ref.watch(checkCallRepositoryProvider),
-    notificationService: ref.watch(notificationServiceProvider),
-  ),
-);
+final realtimeDataManagerProvider =
+    StateNotifierProvider<RealtimeDataManager, RealtimeDataState>(
+      (ref) => RealtimeDataManager(
+        wsController: ref.watch(webSocketProvider.notifier),
+        database: ref.watch(databaseProvider),
+        shiftRepository: ref.watch(shiftRepositoryProvider),
+        checkCallRepository: ref.watch(checkCallRepositoryProvider),
+        notificationService: ref.watch(notificationServiceProvider),
+      ),
+    );
 
-final pollingServiceProvider = StateNotifierProvider<PollingService, PollingState>(
-  (ref) => PollingService(
-    dioClient: ref.watch(dioClientProvider),
-    shiftRepository: ref.watch(shiftRepositoryProvider),
-    notificationService: ref.watch(notificationServiceProvider),
-  ),
-);
+final pollingServiceProvider =
+    StateNotifierProvider<PollingService, PollingState>(
+      (ref) => PollingService(
+        dioClient: ref.watch(dioClientProvider),
+        shiftRepository: ref.watch(shiftRepositoryProvider),
+        notificationService: ref.watch(notificationServiceProvider),
+      ),
+    );
 
-final offlineManagerProvider = StateNotifierProvider<OfflineManager, OfflineState>(
-  (ref) => OfflineManager(ref.watch(syncServiceProvider), ref.watch(databaseProvider)),
-);
+final offlineManagerProvider =
+    StateNotifierProvider<OfflineManager, OfflineState>(
+      (ref) => OfflineManager(
+        ref.watch(syncServiceProvider),
+        ref.watch(databaseProvider),
+      ),
+    );
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -138,7 +183,7 @@ void main() async {
     SystemUiMode.manual,
     overlays: [SystemUiOverlay.top],
   );
-  
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -157,15 +202,29 @@ void main() async {
         AppLogger.warning('Firebase web config missing; skipping web FCM init');
       }
     } else {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
       AppLogger.info('Firebase initialized successfully');
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
     }
   } catch (e) {
-    AppLogger.error('Firebase initialization failed (will use WebSocket only)', e);
+    AppLogger.error(
+      'Firebase initialization failed (will use WebSocket only)',
+      e,
+    );
   }
 
   final serverConfig = await ServerConfigService.getInstance();
+
+  // Initialize AlarmManager for Check Call Alarms
+  try {
+    await AndroidAlarmManager.initialize();
+    AppLogger.info('AndroidAlarmManager initialized successfully');
+  } catch (e) {
+    AppLogger.error('AndroidAlarmManager initialization failed', e);
+  }
+
   final notificationService = NotificationService();
   await notificationService.initialize();
 
@@ -193,12 +252,68 @@ void main() async {
   );
 }
 
-class SecurityOfficerApp extends StatelessWidget {
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+class SecurityOfficerApp extends ConsumerStatefulWidget {
   const SecurityOfficerApp({super.key});
+
+  @override
+  ConsumerState<SecurityOfficerApp> createState() => _SecurityOfficerAppState();
+}
+
+class _SecurityOfficerAppState extends ConsumerState<SecurityOfficerApp> {
+  StreamSubscription<String>? _notificationSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupNotificationListener();
+  }
+
+  void _setupNotificationListener() {
+    final notificationService = ref.read(notificationServiceProvider);
+    _notificationSubscription = notificationService.onNotificationTap.listen((
+      payload,
+    ) {
+      _handleNotificationNavigation(payload);
+    });
+  }
+
+  void _handleNotificationNavigation(String payload) {
+    if (payload.isEmpty) return;
+
+    final parts = payload.split(':');
+    final type = parts[0];
+
+    if (type == 'check_call' || type == 'check_call_alarm') {
+      final checkCallId = parts.length > 1 ? parts[1] : '';
+      if (checkCallId.isNotEmpty) {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (context) => CheckCallAlarmScreen(
+              checkCallId: checkCallId,
+              shiftId: parts.length > 2 ? parts[2] : '',
+              scheduledTime: DateTime.now(),
+            ),
+          ),
+        );
+      }
+    } else if (type == 'new_job') {
+      // Navigate to schedule/job details
+      // Implementation pending
+    }
+  }
+
+  @override
+  void dispose() {
+    _notificationSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -232,9 +347,7 @@ class SecurityOfficerApp extends StatelessWidget {
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           filled: true,
           fillColor: const Color(0xFFFFF3E0), // Very light warm orange
         ),
@@ -271,7 +384,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     if (!mounted) return;
 
     if (!permissionStatus.allRequiredGranted) {
-      AppLogger.info('Required permissions not granted, showing permissions screen');
+      AppLogger.info(
+        'Required permissions not granted, showing permissions screen',
+      );
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (context) => PermissionsScreen(
@@ -288,8 +403,23 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
     AppLogger.info('All required permissions granted');
 
+    // Check if tenant is configured first
+    setState(() => _statusMessage = 'Checking organization setup...');
+    final authService = ref.read(authServiceProvider);
+    final isTenantConfigured = await authService.isTenantConfigured();
+
+    if (!mounted) return;
+
+    if (!isTenantConfigured) {
+      AppLogger.info('No tenant configured, redirecting to tenant setup');
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const TenantSetupScreen()),
+      );
+      return;
+    }
+
     setState(() => _statusMessage = AppConstants.statusCheckingAuth);
-    final isAuthenticated = await ref.read(authServiceProvider).isAuthenticated();
+    final isAuthenticated = await authService.isAuthenticated();
 
     if (!mounted) return;
 
@@ -301,7 +431,10 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         await fcmService.initialize();
         AppLogger.info('FCM Service initialized');
       } catch (e) {
-        AppLogger.error('Failed to initialize FCM (will use WebSocket only)', e);
+        AppLogger.error(
+          'Failed to initialize FCM (will use WebSocket only)',
+          e,
+        );
       }
 
       try {

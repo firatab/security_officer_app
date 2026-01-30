@@ -1,6 +1,13 @@
 /// Application-wide constants
 class AppConstants {
-  // API Configuration
+  // ============================================
+  // API CONFIGURATION
+  // ============================================
+  //
+  // IMPORTANT: These URLs are used as bootstrap/discovery servers.
+  // The TenantDiscoveryService will try these URLs to validate tenant codes.
+  // Once a tenant is validated, the app uses the tenant-specific URL.
+  //
   // For Android Emulator: use 10.0.2.2 (maps to host localhost)
   // For Real Device: use your computer's IP address (e.g., 192.168.1.x)
   // For Production: use your actual server URL
@@ -20,10 +27,10 @@ class AppConstants {
   // static const String wsUrl = 'ws://192.168.1.X:3000';       // Replace X with your IP
   // static const bool enableWebSocket = true;
 
-  // --- PRODUCTION (AWS Amplify - No WebSocket Support) ---
-  static const String baseUrl = 'https://main.d95tb5r5ia3kk.amplifyapp.com';
-  static const String wsUrl = 'wss://main.d95tb5r5ia3kk.amplifyapp.com';
-  static const bool enableWebSocket = false;  // Amplify doesn't support WebSocket
+  // --- PRODUCTION (Live Server) ---
+  static const String baseUrl = 'http://3.9.151.4:3001';
+  static const String wsUrl = 'ws://3.9.151.4:3001';
+  static const bool enableWebSocket = true;
 
   // --- PRODUCTION (AWS ECS - Full WebSocket Support) ---
   // After deploying to ECS, update these URLs with your ALB DNS or custom domain:
@@ -31,13 +38,25 @@ class AppConstants {
   // static const String wsUrl = 'wss://api.yourdomain.com';
   // static const bool enableWebSocket = true;
 
+  // ============================================
+  // FALLBACK/BOOTSTRAP SERVERS
+  // ============================================
+  // These URLs are tried in order when validating tenant codes.
+  // Add your backup/failover servers here.
+  static const List<String> fallbackServers = [
+    baseUrl, // Primary server (from above)
+    'https://api.sentraguard.com', // Production API
+    'https://app.sentraguard.com', // Alternative production
+  ];
+
   static const String apiVersion = 'v1';
 
   // Polling Configuration (fallback when WebSocket is disabled)
-  static const int pollingIntervalSeconds = 30;  // Poll for updates every 30 seconds
+  static const int pollingIntervalSeconds =
+      30; // Poll for updates every 30 seconds
 
   // Location Settings
-  static const int locationUpdateIntervalSeconds = 15;
+  static const int locationUpdateIntervalSeconds = 5;
   static const double geofenceRadiusMeters = 100.0;
 
   // Check Call Settings

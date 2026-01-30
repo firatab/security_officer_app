@@ -64,6 +64,7 @@ dependencies:
   # Feature-specific
   image_picker: ^1.1.2 # For incident reporting
   mobile_scanner: ^7.1.4 # For QR/NFC patrol tours
+  image: ^4.1.7 # For photo compression
 
   # Utilities
   intl: ^0.20.2
@@ -72,6 +73,7 @@ dependencies:
   json_annotation: ^4.9.0
   device_info_plus: ^12.3.0
   package_info_plus: ^9.0.0
+  archive: ^3.4.0 # For gzip compression
 
 dev_dependencies:
   flutter_test:

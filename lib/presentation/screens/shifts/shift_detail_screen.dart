@@ -26,12 +26,24 @@ final shiftDetailProvider =
   final shiftRepo = ref.watch(shiftRepositoryProvider);
   final attendanceRepo = ref.watch(attendanceRepositoryProvider);
 
-  final shift = await shiftRepo.getShiftById(shiftId);
-  final attendance = await attendanceRepo.getAttendanceForShift(shiftId);
+  Shift? shift = await shiftRepo.getShiftById(shiftId);
+  
+  // If not found in local DB, try to sync from API
+  if (shift == null) {
+    AppLogger.info('Shift $shiftId not found in local DB, attempting API sync');
+    try {
+      final synchronizedShifts = await shiftRepo.syncShifts();
+      shift = await shiftRepo.getShiftById(shiftId);
+    } catch (e) {
+      AppLogger.error('Failed to sync shift $shiftId from API', e);
+    }
+  }
 
   if (shift == null) {
-    throw Exception('Shift not found');
+    throw Exception('Shift not found. It may have been deleted or you may be offline.');
   }
+
+  final attendance = await attendanceRepo.getAttendanceForShift(shiftId);
 
   return ShiftDetail(shift: shift, attendance: attendance);
 });
@@ -91,11 +103,6 @@ class _ShiftDetailScreenState extends ConsumerState<ShiftDetailScreen> {
     final theme = Theme.of(context);
     final now = DateTime.now();
 
-    // Determine if shift is finished (both booked on and off)
-    final isShiftFinished = attendance != null && 
-                           attendance.bookOnTime != null && 
-                           attendance.bookOffTime != null;
-
     // Book on time restrictions:
     // - Can book on up to 2 hours before shift starts
     // - Cannot book on if more than 30 minutes after shift start time
@@ -103,14 +110,14 @@ class _ShiftDetailScreenState extends ConsumerState<ShiftDetailScreen> {
     final bookOnDeadline = shiftStartTime.add(const Duration(minutes: 30));
     final canBookOnTime = now.isBefore(bookOnDeadline) &&
                           now.isAfter(shiftStartTime.subtract(const Duration(hours: 2)));
-    final canBookOn = attendance == null && canBookOnTime && !isShiftFinished;
+    final canBookOn = attendance == null && canBookOnTime;
     final isLateBookOn = now.isAfter(shiftStartTime) && now.isBefore(bookOnDeadline);
     final bookOnExpired = now.isAfter(bookOnDeadline) && attendance == null;
 
     // Calculate late minutes for warning
     final lateMinutes = isLateBookOn ? now.difference(shiftStartTime).inMinutes : 0;
 
-    final canBookOff = attendance != null && attendance.bookOffTime == null && !isShiftFinished;
+    final canBookOff = attendance != null && attendance.bookOffTime == null;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -222,72 +229,23 @@ class _ShiftDetailScreenState extends ConsumerState<ShiftDetailScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        if (isShiftFinished) ...[
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.green[50],
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.green[300]!),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.green[700], size: 16),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Completed',
-                                  style: TextStyle(
-                                    color: Colors.green[900],
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                     const Divider(height: 24),
-                    if (attendance.bookOnTime != null) ...[
+                    if (attendance.bookOnTime != null)
                       _buildAttendanceRow(
                         'Booked On',
                         DateFormat('HH:mm').format(attendance.bookOnTime!),
                         Icons.login,
                         Colors.green,
                       ),
-                      if (attendance.bookOnLatitude != null && attendance.bookOnLongitude != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 44, bottom: 8),
-                          child: Text(
-                            'Location: ${attendance.bookOnLatitude!.toStringAsFixed(6)}, ${attendance.bookOnLongitude!.toStringAsFixed(6)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ),
-                    ],
-                    if (attendance.bookOffTime != null) ...[
+                    if (attendance.bookOffTime != null)
                       _buildAttendanceRow(
                         'Booked Off',
                         DateFormat('HH:mm').format(attendance.bookOffTime!),
                         Icons.logout,
                         Colors.blue,
                       ),
-                      if (attendance.bookOffLatitude != null && attendance.bookOffLongitude != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 44, bottom: 8),
-                          child: Text(
-                            'Location: ${attendance.bookOffLatitude!.toStringAsFixed(6)}, ${attendance.bookOffLongitude!.toStringAsFixed(6)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ),
-                    ],
                     if (attendance.totalHours != null)
                       _buildAttendanceRow(
                         'Total Hours',
@@ -559,6 +517,13 @@ class _ShiftDetailScreenState extends ConsumerState<ShiftDetailScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
+              onPressed: () {
+                ref.invalidate(shiftDetailProvider(widget.shiftId));
+              },
+              child: const Text('Retry'),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Go Back'),
             ),

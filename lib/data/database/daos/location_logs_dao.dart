@@ -19,11 +19,12 @@ class LocationLogsDao extends DatabaseAccessor<AppDatabase> {
   }
 
   Future<int> markAsSynced(String id) {
-    return (update(_locationLogs)..where((tbl) => tbl.id.equals(id)))
-        .write(LocationLogsCompanion(
-          needsSync: const Value(false),
-          syncedAt: Value(DateTime.now()),
-        ));
+    return (update(_locationLogs)..where((tbl) => tbl.id.equals(id))).write(
+      LocationLogsCompanion(
+        needsSync: const Value(false),
+        syncedAt: Value(DateTime.now()),
+      ),
+    );
   }
 
   Future<int> markBatchAsSynced(List<String> ids) async {
@@ -35,14 +36,15 @@ class LocationLogsDao extends DatabaseAccessor<AppDatabase> {
   }
 
   /// DIAGNOSTIC METHODS - for debugging sync issues
-  
-  Future<int> countTotal() async {
-    final query = selectOnly(_locationLogs)..addColumns([_locationLogs.id.count()]);
+
+  Future<int> getTotalCount() async {
+    final query = selectOnly(_locationLogs)
+      ..addColumns([_locationLogs.id.count()]);
     final result = await query.getSingle();
     return result.read(_locationLogs.id.count()) ?? 0;
   }
 
-  Future<int> countUnsynced() async {
+  Future<int> getUnsyncedCount() async {
     final query = selectOnly(_locationLogs)
       ..where(_locationLogs.needsSync.equals(true))
       ..addColumns([_locationLogs.id.count()]);

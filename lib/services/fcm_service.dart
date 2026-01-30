@@ -3,10 +3,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/utils/logger.dart';
 import '../core/network/dio_client.dart';
+import '../core/constants/app_constants.dart';
+import '../data/database/app_database.dart';
+import '../main.dart' hide dioClientProvider;
 import 'notification_service.dart';
-
 import 'notification_dedup_service.dart';
 
 /// Provider for FCM Service
@@ -21,7 +25,7 @@ class FCMService {
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
   final NotificationService _notificationService = NotificationService();
   final NotificationDedupService _dedupService = NotificationDedupService();
-  
+
   String? _fcmToken;
   bool _initialized = false;
 
@@ -42,44 +46,48 @@ class FCMService {
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         AppLogger.info('FCM: Push notification permission granted');
-        
+
         // Get FCM token
         _fcmToken = await _getFcmToken();
         if (_fcmToken != null) {
-          AppLogger.info('FCM Token obtained: ${_fcmToken!.substring(0, 20)}...');
-          
+          AppLogger.info(
+            'FCM Token obtained: ${_fcmToken!.substring(0, 20)}...',
+          );
+
           // Register token with backend server
           await _registerTokenWithServer(_fcmToken!);
         } else {
           AppLogger.warning('FCM: Failed to get token');
         }
-        
+
         // Listen for token refresh
         _fcm.onTokenRefresh.listen((newToken) {
           AppLogger.info('FCM Token refreshed');
           _fcmToken = newToken;
           _registerTokenWithServer(newToken);
         });
-        
+
         // Handle foreground messages (when app is open)
         FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-        
+
         // Handle background messages (when app is in background but not killed)
         FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageOpenedApp);
-        
+
         // Handle notification tap when app was completely closed
         final initialMessage = await _fcm.getInitialMessage();
         if (initialMessage != null) {
           AppLogger.info('FCM: App opened from notification (was terminated)');
           _handleMessageOpenedApp(initialMessage);
         }
-        
+
         _initialized = true;
         AppLogger.info('FCM Service initialized successfully');
       } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
         AppLogger.warning('FCM: Push notification permission denied');
       } else {
-        AppLogger.warning('FCM: Push notification permission not determined yet');
+        AppLogger.warning(
+          'FCM: Push notification permission not determined yet',
+        );
       }
     } catch (e) {
       AppLogger.error('FCM initialization failed', e);
@@ -88,17 +96,60 @@ class FCMService {
 
   /// Handle foreground message (app is open and active)
   void _handleForegroundMessage(RemoteMessage message) async {
-    AppLogger.info('FCM: Foreground message received: ${message.notification?.title}');
-    
+    AppLogger.info(
+      'FCM: Foreground message received: ${message.notification?.title}',
+    );
+
     // Check for duplicate using message ID
-    final messageId = message.messageId ?? message.data.toString().hashCode.abs().toString();
+    final messageId =
+        message.messageId ?? message.data.toString().hashCode.abs().toString();
     final shouldShow = await _dedupService.shouldShowNotification(messageId);
-    
+
     if (!shouldShow) {
       AppLogger.debug('Skipping duplicate FCM message: $messageId');
       return;
     }
-    
+
+    // Save to in-app notifications database
+    try {
+      final database = _ref.read(databaseProvider);
+
+      // Get current tenant and employee from secure storage
+      final storage = const FlutterSecureStorage();
+      final tenantId = await storage.read(key: AppConstants.tenantIdKey) ?? '';
+      final employeeId =
+          await storage.read(key: AppConstants.employeeIdKey) ?? '';
+
+      if (tenantId.isNotEmpty && employeeId.isNotEmpty) {
+        await database.inAppNotificationsDao.insertNotification(
+          InAppNotificationsCompanion.insert(
+            id: messageId,
+            tenantId: tenantId,
+            employeeId: employeeId,
+            title: message.notification?.title ?? 'Notification',
+            body: message.notification?.body ?? '',
+            type: message.data['type'] as String? ?? 'general',
+            priority: Value(message.data['priority'] as String? ?? 'normal'),
+            iconType: Value(message.data['iconType'] as String?),
+            relatedEntityType: Value(
+              message.data['relatedEntityType'] as String?,
+            ),
+            relatedEntityId: Value(message.data['relatedEntityId'] as String?),
+            actionRoute: Value(message.data['actionRoute'] as String?),
+            receivedAt: DateTime.now(),
+          ),
+        );
+        AppLogger.debug('FCM: Notification saved to database');
+      } else {
+        AppLogger.warning(
+          'FCM: Cannot save notification - user not authenticated',
+        );
+      }
+    } catch (e) {
+      AppLogger.error('FCM: Failed to save notification to database', e);
+      // Continue to show notification even if database save fails
+    }
+
     if (message.notification != null) {
       // Show local notification using flutter_local_notifications
       _notificationService.showGeneralNotification(
@@ -114,11 +165,11 @@ class FCMService {
   /// This is called when user taps on notification
   void _handleMessageOpenedApp(RemoteMessage message) {
     AppLogger.info('FCM: App opened from notification: ${message.data}');
-    
+
     // Navigate based on notification type
     final type = message.data['type'] as String?;
     final notificationType = message.data['notificationType'] as String?;
-    
+
     // TODO: Implement navigation based on type
     // Example:
     // if (type == 'check_call') {
@@ -126,8 +177,10 @@ class FCMService {
     // } else if (type == 'shift_assignment') {
     //   // Navigate to shifts screen
     // }
-    
-    AppLogger.info('Notification type: $type, notificationType: $notificationType');
+
+    AppLogger.info(
+      'Notification type: $type, notificationType: $notificationType',
+    );
   }
 
   /// Register FCM token with backend server
@@ -136,15 +189,18 @@ class FCMService {
       final dioClient = _ref.read(dioClientProvider);
 
       final platform = _resolvePlatform();
-      
-      await dioClient.post('/api/push-tokens', data: {
-        'token': token,
-        'platform': platform,
-        'deviceId': await _getDeviceId(),
-        'deviceType': platform,
-        'appVersion': '1.0.0', // TODO: Get from package_info_plus
-      });
-      
+
+      await dioClient.post(
+        '/api/push-tokens',
+        data: {
+          'token': token,
+          'platform': platform,
+          'deviceId': await _getDeviceId(),
+          'deviceType': platform,
+          'appVersion': '1.0.0', // TODO: Get from package_info_plus
+        },
+      );
+
       AppLogger.info('FCM: Token registered with server successfully');
     } catch (e) {
       AppLogger.error('FCM: Failed to register token with server', e);
@@ -186,16 +242,14 @@ class FCMService {
     if (_fcmToken != null) {
       try {
         final dioClient = _ref.read(dioClientProvider);
-        
+
         // Unregister from server
-        await dioClient.delete('/api/push-tokens', data: {
-          'token': _fcmToken,
-        });
-        
+        await dioClient.delete('/api/push-tokens', data: {'token': _fcmToken});
+
         // Delete FCM token
         await _fcm.deleteToken();
         _fcmToken = null;
-        
+
         AppLogger.info('FCM: Token unregistered successfully');
       } catch (e) {
         AppLogger.error('FCM: Failed to unregister token', e);
@@ -242,12 +296,14 @@ String _resolvePlatform() {
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Initialize Firebase if not already initialized
   await Firebase.initializeApp();
-  
-  AppLogger.info('FCM Background: Message received: ${message.notification?.title}');
-  
+
+  AppLogger.info(
+    'FCM Background: Message received: ${message.notification?.title}',
+  );
+
   // You can process the message here if needed
   // Note: This runs in a separate isolate, so you can't update UI directly
-  
+
   // The notification is automatically shown by the system
   // You can customize behavior by adding custom logic here
 }

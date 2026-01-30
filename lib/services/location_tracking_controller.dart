@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../core/utils/logger.dart';
 import 'background_location_service.dart';
 import 'location_service.dart';
+import 'location_batch_manager.dart';
 
 /// Location tracking state
 class LocationTrackingState {
@@ -50,10 +51,14 @@ class LocationTrackingState {
 class LocationTrackingController extends StateNotifier<LocationTrackingState> {
   final BackgroundLocationService _backgroundService;
   final LocationService _locationService;
+  final LocationBatchManager _batchManager;
   StreamSubscription<Map<String, dynamic>?>? _statusSubscription;
 
-  LocationTrackingController(this._backgroundService, this._locationService)
-      : super(LocationTrackingState());
+  LocationTrackingController(
+    this._backgroundService,
+    this._locationService,
+    this._batchManager,
+  ) : super(LocationTrackingState());
 
   /// Initialize the tracking service
   Future<void> initialize() async {
@@ -88,7 +93,9 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
                       ? DateTime.tryParse(timestampStr) ?? DateTime.now()
                       : DateTime.now(),
                 ),
-                lastUpdate: timestampStr != null ? DateTime.tryParse(timestampStr) : DateTime.now(),
+                lastUpdate: timestampStr != null
+                    ? DateTime.tryParse(timestampStr)
+                    : DateTime.now(),
                 locationCount: count,
               );
             } catch (e) {
@@ -104,16 +111,14 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
       // Check if already tracking
       final isRunning = await _backgroundService.isTrackingActive();
 
-      state = state.copyWith(
-        isInitialized: true,
-        isTracking: isRunning,
-      );
+      state = state.copyWith(isInitialized: true, isTracking: isRunning);
 
       AppLogger.info('Location tracking controller initialized');
     } catch (e) {
       AppLogger.error('Error initializing location tracking', e);
       state = state.copyWith(
-        isInitialized: true, // Mark as initialized even on error to prevent retry loops
+        isInitialized:
+            true, // Mark as initialized even on error to prevent retry loops
         error: 'Failed to initialize location tracking: $e',
       );
     }
@@ -127,9 +132,7 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
   }) async {
     // Validate inputs
     if (employeeId.isEmpty || tenantId.isEmpty) {
-      state = state.copyWith(
-        error: 'Invalid employee or tenant ID',
-      );
+      state = state.copyWith(error: 'Invalid employee or tenant ID');
       return false;
     }
 
@@ -150,7 +153,8 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
 
       if (permission == LocationPermission.deniedForever) {
         state = state.copyWith(
-          error: 'Location permission permanently denied. Please enable in app settings.',
+          error:
+              'Location permission permanently denied. Please enable in app settings.',
         );
         return false;
       }
@@ -183,6 +187,9 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
           error: null,
           locationCount: 0,
         );
+        // Start batch sync manager
+        _batchManager.startPeriodicSync();
+
         AppLogger.info('Location tracking started for employee: $employeeId');
       } else {
         state = state.copyWith(
@@ -194,7 +201,8 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
     } catch (e) {
       AppLogger.error('Error starting tracking', e);
       state = state.copyWith(
-        error: 'Error starting tracking: ${e.toString().replaceAll('Exception:', '').trim()}',
+        error:
+            'Error starting tracking: ${e.toString().replaceAll('Exception:', '').trim()}',
       );
       return false;
     }
@@ -210,11 +218,13 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
         error: null,
       );
       AppLogger.info('Location tracking stopped');
+
+      // Stop batch sync and trigger final sync
+      _batchManager.stop();
+      _batchManager.syncNow();
     } catch (e) {
       AppLogger.error('Error stopping tracking', e);
-      state = state.copyWith(
-        error: 'Error stopping tracking: $e',
-      );
+      state = state.copyWith(error: 'Error stopping tracking: $e');
     }
   }
 
@@ -239,9 +249,7 @@ class LocationTrackingController extends StateNotifier<LocationTrackingState> {
       return position;
     } catch (e) {
       AppLogger.error('Error getting current location', e);
-      state = state.copyWith(
-        error: 'Error getting location: $e',
-      );
+      state = state.copyWith(error: 'Error getting location: $e');
       return null;
     }
   }
