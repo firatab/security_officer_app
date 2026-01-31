@@ -18,6 +18,17 @@ class DioClient {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
   ServerConfigService? _serverConfig;
 
+  /// Flag to prevent infinite refresh loop
+  bool _isRefreshing = false;
+
+  /// Endpoints that should not trigger token refresh
+  static const _noRefreshEndpoints = [
+    '/api/auth/refresh',
+    '/api/auth/login',
+    '/api/tenant/validate-code',
+    '/api/tenant/info',
+  ];
+
   DioClient({String? baseUrl}) {
     _dio = Dio(
       BaseOptions(
@@ -107,8 +118,28 @@ class DioClient {
 
     // Handle 401 Unauthorized - try to refresh token
     if (err.response?.statusCode == 401) {
+      final requestPath = err.requestOptions.path;
+
+      // Don't try to refresh for auth-related endpoints (prevents infinite loop)
+      final isNoRefreshEndpoint = _noRefreshEndpoints.any(
+        (endpoint) => requestPath.contains(endpoint),
+      );
+
+      if (isNoRefreshEndpoint) {
+        AppLogger.debug('Skipping token refresh for auth endpoint: $requestPath');
+        return handler.next(err);
+      }
+
+      // Prevent multiple simultaneous refresh attempts
+      if (_isRefreshing) {
+        AppLogger.debug('Token refresh already in progress, skipping');
+        return handler.next(err);
+      }
+
       try {
+        _isRefreshing = true;
         final refreshed = await _refreshToken();
+
         if (refreshed) {
           // Retry the original request
           final options = err.requestOptions;
@@ -117,11 +148,16 @@ class DioClient {
 
           final response = await _dio.fetch(options);
           return handler.resolve(response);
+        } else {
+          // Refresh failed, clear auth and let error propagate
+          await _clearAuth();
         }
       } catch (e) {
         AppLogger.error('Token refresh failed', e);
         // Clear tokens and redirect to login
         await _clearAuth();
+      } finally {
+        _isRefreshing = false;
       }
     }
 

@@ -238,9 +238,146 @@ class SyncService {
 
   /// Update local entity with server data
   Future<void> _updateLocalEntity(String entityType, String entityId, Map<String, dynamic> data) async {
-    // Implementation depends on entity type
     AppLogger.debug('Updating local $entityType:$entityId with server data');
-    // This would update the specific table based on entityType
+
+    try {
+      switch (entityType) {
+        case 'attendance':
+          await _updateLocalAttendance(entityId, data);
+          break;
+
+        case 'check_call':
+          await _updateLocalCheckCall(entityId, data);
+          break;
+
+        case 'incident':
+          await _updateLocalIncident(entityId, data);
+          break;
+
+        case 'shift':
+          await _updateLocalShift(entityId, data);
+          break;
+
+        case 'location':
+          // Location updates don't need local sync (fire and forget)
+          AppLogger.debug('Location sync - no local update needed');
+          break;
+
+        default:
+          AppLogger.warning('Unknown entity type for local update: $entityType');
+      }
+    } catch (e) {
+      AppLogger.error('Failed to update local $entityType:$entityId', e);
+    }
+  }
+
+  /// Update local attendance record with server data
+  Future<void> _updateLocalAttendance(String attendanceId, Map<String, dynamic> data) async {
+    try {
+      // Parse server data
+      final bookOnTime = data['bookOnTime'] != null
+          ? DateTime.parse(data['bookOnTime'] as String)
+          : null;
+      final bookOffTime = data['bookOffTime'] != null
+          ? DateTime.parse(data['bookOffTime'] as String)
+          : null;
+
+      await (_database.update(_database.attendances)
+            ..where((tbl) => tbl.id.equals(attendanceId)))
+          .write(AttendancesCompanion(
+        status: drift.Value(data['status'] as String? ?? 'unknown'),
+        bookOnTime: drift.Value(bookOnTime),
+        bookOffTime: drift.Value(bookOffTime),
+        bookOnLatitude: drift.Value(data['bookOnLatitude'] as double?),
+        bookOnLongitude: drift.Value(data['bookOnLongitude'] as double?),
+        bookOffLatitude: drift.Value(data['bookOffLatitude'] as double?),
+        bookOffLongitude: drift.Value(data['bookOffLongitude'] as double?),
+        totalHours: drift.Value(data['totalHours'] as double?),
+        syncedAt: drift.Value(DateTime.now()),
+      ));
+
+      AppLogger.info('Local attendance $attendanceId updated from server');
+    } catch (e) {
+      AppLogger.error('Failed to update local attendance', e);
+      rethrow;
+    }
+  }
+
+  /// Update local check call record with server data
+  Future<void> _updateLocalCheckCall(String checkCallId, Map<String, dynamic> data) async {
+    try {
+      final scheduledTime = data['scheduledTime'] != null
+          ? DateTime.parse(data['scheduledTime'] as String)
+          : DateTime.now();
+      final respondedAt = data['respondedAt'] != null
+          ? DateTime.parse(data['respondedAt'] as String)
+          : null;
+
+      await (_database.update(_database.checkCalls)
+            ..where((tbl) => tbl.id.equals(checkCallId)))
+          .write(CheckCallsCompanion(
+        status: drift.Value(data['status'] as String? ?? 'pending'),
+        scheduledTime: drift.Value(scheduledTime),
+        respondedAt: drift.Value(respondedAt),
+        responseLatitude: drift.Value(data['responseLatitude'] as double?),
+        responseLongitude: drift.Value(data['responseLongitude'] as double?),
+        syncedAt: drift.Value(DateTime.now()),
+      ));
+
+      AppLogger.info('Local check call $checkCallId updated from server');
+    } catch (e) {
+      AppLogger.error('Failed to update local check call', e);
+      rethrow;
+    }
+  }
+
+  /// Update local incident record with server data
+  Future<void> _updateLocalIncident(String incidentId, Map<String, dynamic> data) async {
+    try {
+      final reportedAt = data['reportedAt'] != null
+          ? DateTime.parse(data['reportedAt'] as String)
+          : DateTime.now();
+
+      await (_database.update(_database.incidentReports)
+            ..where((tbl) => tbl.id.equals(incidentId)))
+          .write(IncidentReportsCompanion(
+        status: drift.Value(data['status'] as String? ?? 'reported'),
+        severity: drift.Value(data['severity'] as String? ?? 'low'),
+        reportedAt: drift.Value(reportedAt),
+        syncedAt: drift.Value(DateTime.now()),
+      ));
+
+      AppLogger.info('Local incident $incidentId updated from server');
+    } catch (e) {
+      AppLogger.error('Failed to update local incident', e);
+      rethrow;
+    }
+  }
+
+  /// Update local shift record with server data
+  Future<void> _updateLocalShift(String shiftId, Map<String, dynamic> data) async {
+    try {
+      final startTime = data['startTime'] != null
+          ? DateTime.parse(data['startTime'] as String)
+          : null;
+      final endTime = data['endTime'] != null
+          ? DateTime.parse(data['endTime'] as String)
+          : null;
+
+      await (_database.update(_database.shifts)
+            ..where((tbl) => tbl.id.equals(shiftId)))
+          .write(ShiftsCompanion(
+        status: drift.Value(data['status'] as String? ?? 'scheduled'),
+        startTime: drift.Value(startTime),
+        endTime: drift.Value(endTime),
+        syncedAt: drift.Value(DateTime.now()),
+      ));
+
+      AppLogger.info('Local shift $shiftId updated from server');
+    } catch (e) {
+      AppLogger.error('Failed to update local shift', e);
+      rethrow;
+    }
   }
 
   /// Re-queue item with delay

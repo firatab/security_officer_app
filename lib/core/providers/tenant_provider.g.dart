@@ -88,7 +88,7 @@ final isTenantConfiguredProvider = AutoDisposeFutureProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef IsTenantConfiguredRef = AutoDisposeFutureProviderRef<bool>;
-String _$tenantSetupHash() => r'c4d96e6005cf5a0034c424332a1c7c7357922419';
+String _$tenantSetupHash() => r'69b8bcac839e5ef75979350cbe70f780eb475b32';
 
 /// Tenant Setup Notifier
 ///
